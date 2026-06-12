@@ -173,7 +173,7 @@
         .rank-num-climb { animation: rankClimb 0.55s cubic-bezier(0.22,1,0.36,1) forwards; }
         .rank-num-drop  { animation: rankDrop  0.55s cubic-bezier(0.22,1,0.36,1) forwards; }
 
-
+        .animate-in {
             animation: fadeInUp 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
             opacity: 0;
         }
@@ -1052,7 +1052,7 @@
             opacity: 1;
             pointer-events: all;
         }
-        .popup- {
+        .popup-sheet {
             width: 100%;
             max-width: 560px;
             background: var(--bg-elevated);
@@ -1065,7 +1065,7 @@
             overflow-y: auto;
             overscroll-behavior: contain;
         }
-        .popup-overlay.open .popup- {
+        .popup-overlay.open .popup-sheet {
             transform: translateY(0);
         }
         .podium-card { cursor: pointer; }
@@ -1515,7 +1515,7 @@
     <!-- TICKER -->
     <div class="ticker-wrap fade-in delay-1">
         <div class="ticker">
-            <!-- Populated dynamically from Google s -->
+            <!-- Populated dynamically from Google Sheets -->
         </div>
     </div>
 
@@ -1700,55 +1700,135 @@
         //  Make the sheet publicly viewable:
         //    Share → Anyone with the link → Viewer
         // ============================================================
-        const SHEET_ID = 'YOUR_GOOGLE_SHEET_ID_HERE';
+        const SHEET_ID = '1yOG8gXxc6Ydbbi1lsnDwjWSepFM8eJ33KhkbKzTetYU'; // ✅ Sheet ID configured
 
-        // ===== JSONP FETCH (bypasses CORS — works from any host or local file) =====
-        // Google's gviz/tq endpoint supports a callback param, avoiding fetch() CORS issues.
-        function fetchSheetJSONP(sheetName) {
-            return new Promise((resolve, reject) => {
-                const cbName = '_gviz_' + sheetName + '_' + Date.now();
-                const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&tq=select+*&sheet=${encodeURIComponent(sheetName)}&callback=${cbName}`;
+        // ===== DIAGNOSTIC PANEL =====
+        function showDiag(msg, type = 'error') {
+            let panel = document.getElementById('_diagPanel');
+            if (!panel) {
+                panel = document.createElement('div');
+                panel.id = '_diagPanel';
+                panel.style.cssText = `
+                    position:fixed;bottom:0;left:0;right:0;z-index:9999;
+                    background:${type==='ok'?'#052e16':'#1c0a0a'};
+                    border-top:2px solid ${type==='ok'?'#22c55e':'#ef4444'};
+                    color:${type==='ok'?'#86efac':'#fca5a5'};
+                    font:13px/1.6 monospace;padding:14px 18px 18px;
+                    max-height:50vh;overflow-y:auto;`;
+                document.body.appendChild(panel);
+            }
+            panel.innerHTML = `<strong style="font-size:14px">${type==='ok'?'✅':'🔴'} Trial Bench — ${type==='ok'?'Connected':'Connection Error'}</strong><br><br>${msg}
+                <br><br><button onclick="document.getElementById('_diagPanel').remove()"
+                style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);
+                color:inherit;padding:4px 14px;border-radius:6px;cursor:pointer;font-size:12px">Dismiss</button>`;
+        }
 
-                window[cbName] = function(data) {
-                    delete window[cbName];
-                    document.getElementById(cbName)?.remove();
-                    try {
-                        // Parse gviz table into array-of-arrays (skip header row)
-                        const cols = data.table.cols;
-                        const rows = data.table.rows.map(row =>
-                            row.c.map((cell, i) => {
-                                if (!cell || cell.v === null || cell.v === undefined) return '';
-                                // Numbers come back as numbers; convert to string for consistency
-                                return String(cell.v).trim();
-                            })
-                        ).filter(r => r.some(c => c !== ''));
-                        resolve(rows);
-                    } catch(e) { reject(e); }
-                };
+        // ===== CSV FETCH (works from GitHub Pages & all static hosts) =====
+        // Uses the Google Sheets CSV export endpoint — no JSONP, no CORS issues.
+        // Requires sheet to be "Anyone with the link → Viewer".
 
-                const script = document.createElement('script');
-                script.id = cbName;
-                script.src = url;
-                script.onerror = () => {
-                    delete window[cbName];
-                    script.remove();
-                    reject(new Error('JSONP script failed for sheet: ' + sheetName));
-                };
-                document.head.appendChild(script);
-            });
+        // Tab GIDs — update these if you rename/reorder tabs
+        const SHEET_GIDS = {
+            'Assignments': '741739227',   // gid from URL when on that tab
+            'Matches':     null,          // null = auto-detect via gviz fallback
+            'Leaderboard': null,
+        };
+
+        function parseCSV(text) {
+            const lines = text.split(/\r?\n/);
+            return lines.map(line => {
+                const cells = [];
+                let cur = '', inQ = false;
+                for (let i = 0; i < line.length; i++) {
+                    const ch = line[i];
+                    if (ch === '"') {
+                        if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+                        else inQ = !inQ;
+                    } else if (ch === ',' && !inQ) {
+                        cells.push(cur.trim()); cur = '';
+                    } else cur += ch;
+                }
+                cells.push(cur.trim());
+                return cells;
+            }).filter(r => r.some(c => c !== ''));
+        }
+
+        async function fetchSheetCSV(sheetName) {
+            if (!SHEET_ID || SHEET_ID === 'YOUR_SHEET_ID_HERE')
+                throw new Error('SHEET_ID not set');
+
+            // Strategy 1: named-sheet CSV export (works for public sheets)
+            const csvUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 12000);
+
+            try {
+                const res = await fetch(csvUrl, { signal: controller.signal });
+                clearTimeout(timer);
+                if (!res.ok) throw new Error(`HTTP ${res.status} for "${sheetName}"`);
+                const text = await res.text();
+                // If Google returns an HTML error page instead of CSV, detect it
+                if (text.trim().startsWith('<')) throw new Error(`Sheet "${sheetName}" returned HTML — check sharing settings`);
+                return parseCSV(text);
+            } catch(e) {
+                clearTimeout(timer);
+                throw new Error(`Failed to fetch "${sheetName}": ${e.message}`);
+            }
         }
 
         // ===== FETCH ALL SHEETS IN PARALLEL =====
         async function fetchAllData() {
+            if (!SHEET_ID || SHEET_ID === 'YOUR_SHEET_ID_HERE') {
+                showDiag(`<b>Sheet ID not configured.</b><br><br>
+                    Open the HTML file and set <code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px">SHEET_ID</code>
+                    to your Google Sheet ID (the long string in the sheet URL).<br><br>
+                    <code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px">
+                    https://docs.google.com/spreadsheets/d/<u>THIS_PART</u>/edit</code>`);
+                return null;
+            }
+
             try {
-                const [assignments, matches, leaderboard] = await Promise.all([
-                    fetchSheetJSONP('Assignments'),
-                    fetchSheetJSONP('Matches'),
-                    fetchSheetJSONP('Leaderboard'),
+                const [rawAssignments, rawMatches, rawLeaderboard] = await Promise.all([
+                    fetchSheetCSV('Assignments'),
+                    fetchSheetCSV('Matches'),
+                    fetchSheetCSV('Leaderboard'),
                 ]);
+
+                // ── Assignments: A=#, B=PlayerName, C=Country, D=Flag
+                // Skip rows where col A is not a plain integer (title/header rows)
+                const assignments = rawAssignments
+                    .filter(r => r[0] && /^\d+$/.test(r[0].trim()))
+                    .map(r => [r[1], r[2], r[3]]); // → [PlayerName, Country, Flag]
+
+                // ── Matches: A=#, B=Date, C=Grp, D=Team1, E=Team2, F=Score1, G=Score2,
+                //            H=PtsT1, I=PtsT2, J=Result, K=CST1, L=CST2
+                // Skip rows where col A is not a number (title/header rows)
+                const matches = rawMatches
+                    .filter(r => r[0] && /^\d+$/.test(r[0].trim()))
+                    .map(r => [r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11]]);
+                // → [#, Date, Grp, Team1, Team2, Score1, Score2, PtsT1, PtsT2, Result, CST1, CST2]
+
+                // ── Leaderboard: A=Player, B=Country, C=Flag, D=Points
+                // Skip rows where col A is empty or a header keyword
+                const leaderboard = rawLeaderboard
+                    .filter(r => r[0] && r[0].trim() !== '' && !/^(Player|Leaderboard|Rank|Name|Pos)/i.test(r[0].trim()));
+
+                // Remove any previous error panel on success
+                document.getElementById('_diagPanel')?.remove();
                 return { assignments, matches, leaderboard };
             } catch (err) {
-                console.error('Trial Bench: Failed to fetch sheet data.', err);
+                const testUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Leaderboard`;
+                showDiag(`<b>${err.message}</b><br><br>
+                    <u>Checklist:</u><br>
+                    1️⃣ &nbsp;Sheet is public: <b>Share → Anyone with the link → Viewer</b><br>
+                    2️⃣ &nbsp;Tab names are exactly: <b>Assignments</b>, <b>Matches</b>, <b>Leaderboard</b><br>
+                    3️⃣ &nbsp;Sheet ID matches your Google Sheet URL<br><br>
+                    Your Sheet ID: <code style="background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px">${SHEET_ID}</code><br><br>
+                    🔗 <a href="${testUrl}" target="_blank" style="color:#86efac">Test Leaderboard CSV ↗</a> (should show raw data if public)<br><br>
+                    <button onclick="document.getElementById('_diagPanel').remove();fetchAndRender();"
+                    style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.3);
+                    color:#86efac;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:12px">↻ Retry</button>`);
                 return null;
             }
         }
@@ -2216,7 +2296,8 @@
             // Top scorer today = player with highest points in matches (ptsT1/ptsT2 columns)
             let topScorer = null, topPts = -1;
             matches.forEach(row => {
-                const [team1, team2, , , p1Raw, p2Raw] = row;
+                // New format: [#, Date, Grp, Team1, Team2, Score1, Score2, PtsT1, PtsT2, ...]
+                const team1 = row[3], team2 = row[4], p1Raw = row[7], p2Raw = row[8];
                 const p1 = parseInt(p1Raw) || 0;
                 const p2 = parseInt(p2Raw) || 0;
                 if (p1 > topPts) { topPts = p1; topScorer = team1; }
@@ -2257,7 +2338,8 @@
             });
 
             const items = matches.map(row => {
-                const [team1, team2, s1Raw, s2Raw] = row;
+                // New format: [#, Date, Grp, Team1, Team2, Score1, Score2, ...]
+                const team1 = row[3], team2 = row[4], s1Raw = row[5], s2Raw = row[6];
                 const s1 = s1Raw !== '' ? s1Raw : null;
                 const s2 = s2Raw !== '' ? s2Raw : null;
                 const p1 = teamMap[team1] || { name: team1, country: '' };
