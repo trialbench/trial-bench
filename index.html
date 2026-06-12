@@ -264,11 +264,18 @@
 
 <!-- DEBUG BANNER -->
 <div id="debugBanner">
-    <div class="db-title">⚙️ Connection Status</div>
-    <div id="dbAssignments" class="db-row"><span class="db-dot db-wait"></span> Assignments tab: checking…</div>
-    <div id="dbMatches" class="db-row"><span class="db-dot db-wait"></span> Matches tab: checking…</div>
-    <div id="dbLeaderboard" class="db-row"><span class="db-dot db-wait"></span> Leaderboard tab: checking…</div>
-    <button onclick="document.getElementById('debugBanner').classList.remove('show')">Dismiss</button>
+    <div class="db-title">&#x2699;&#xFE0F; Google Sheet Connection Status</div>
+    <div id="dbAssignments" class="db-row"><span class="db-dot db-wait"></span> <span class="db-label">Assignments tab: checking&#8230;</span></div>
+    <div id="dbMatches" class="db-row"><span class="db-dot db-wait"></span> <span class="db-label">Matches tab: checking&#8230;</span></div>
+    <div id="dbLeaderboard" class="db-row"><span class="db-dot db-wait"></span> <span class="db-label">Leaderboard tab: checking&#8230;</span></div>
+    <div id="dbHint" style="display:none;font-size:11px;color:#fca5a5;margin-top:4px;line-height:1.5;">
+        &#x26A0;&#xFE0F; Fix: Open your Google Sheet &#x2192; Share &#x2192; Change to <strong style="color:#fde68a">"Anyone with the link can view"</strong>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+        <button onclick="runDiagnostic()">&#x1F50D; Run Diagnostic</button>
+        <button onclick="document.getElementById('debugBanner').classList.remove('show')">Dismiss</button>
+    </div>
+    <div id="dbRawOut" style="display:none;margin-top:8px;background:#0a0a1a;border:1px solid #4f46e5;border-radius:6px;padding:8px;font-size:10px;color:#a5b4fc;max-height:160px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;font-family:monospace;"></div>
 </div>
 
 <div class="mini-header" id="miniHeader">
@@ -347,54 +354,149 @@
 </div>
 
 <script>
-    const SHEET_ID = '1yOG8gXxc6Ydbbi1lsnDwjWSepFM8eJ33KhkbKzTetYU';
+    var SHEET_ID = '1yOG8gXxc6Ydbbi1lsnDwjWSepFM8eJ33KhkbKzTetYU';
+
+    // ── Diagnostic tool ──────────────────────────────────────────────
+    function runDiagnostic() {
+        var out = document.getElementById('dbRawOut');
+        out.style.display = 'block';
+        out.textContent = 'Running diagnostic...\n\n';
+
+        var tabs = ['Assignments', 'Matches', 'Leaderboard'];
+        var done = 0;
+
+        tabs.forEach(function(tab) {
+            var cbName = '_diag_' + tab + '_' + Date.now();
+            var url = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID
+                + '/gviz/tq?tqx=out:json&tq=select%20*&sheet='
+                + encodeURIComponent(tab) + '&headers=2&callback=' + cbName;
+
+            var timedOut = false;
+            var timer = setTimeout(function() {
+                timedOut = true;
+                delete window[cbName];
+                var s = document.getElementById(cbName);
+                if (s) s.parentNode.removeChild(s);
+                out.textContent += '[' + tab + '] TIMEOUT — Google blocked the request (file:// restriction or sheet is private)\n';
+                done++;
+                if (done === tabs.length) out.textContent += '\nConclusion: You must serve this file from a web server (not file://). Use Python: python3 -m http.server 8080';
+            }, 8000);
+
+            window[cbName] = function(data) {
+                clearTimeout(timer);
+                if (timedOut) return;
+                delete window[cbName];
+                var s = document.getElementById(cbName);
+                if (s) s.parentNode.removeChild(s);
+                if (!data || !data.table) {
+                    out.textContent += '[' + tab + '] ERROR — response has no table. Keys: ' + (data ? Object.keys(data).join(', ') : 'null') + '\n';
+                } else {
+                    var rows = data.table.rows ? data.table.rows.length : 0;
+                    var cols = data.table.cols ? data.table.cols.map(function(c){ return c.label||c.id; }).join(', ') : 'none';
+                    out.textContent += '[' + tab + '] OK — ' + rows + ' rows. Columns: ' + cols + '\n';
+                    if (rows > 0 && data.table.rows[0] && data.table.rows[0].c) {
+                        var first = data.table.rows[0].c.map(function(c){ return c ? String(c.v) : ''; }).join(' | ');
+                        out.textContent += '  First row: ' + first + '\n';
+                    }
+                }
+                done++;
+                if (done === tabs.length) out.textContent += '\nDone.';
+            };
+
+            var script = document.createElement('script');
+            script.id = cbName;
+            script.src = url;
+            script.onerror = function() {
+                clearTimeout(timer);
+                delete window[cbName];
+                out.textContent += '[' + tab + '] SCRIPT ERROR — request was blocked by browser\n';
+                done++;
+                if (done === tabs.length) out.textContent += '\nConclusion: Serve this file from localhost, not file://';
+            };
+            document.head.appendChild(script);
+        });
+    }
 
     // ── Debug helpers ────────────────────────────────────────────────
     function dbSet(id, ok, msg) {
-        const el = document.getElementById(id);
+        var el = document.getElementById(id);
         if (!el) return;
-        const dot = el.querySelector('.db-dot');
-        dot.className = 'db-dot ' + (ok ? 'db-ok' : 'db-err');
-        el.childNodes[1].textContent = ' ' + msg;
+        var dot = el.querySelector('.db-dot');
+        var lbl = el.querySelector('.db-label');
+        if (dot) dot.className = 'db-dot ' + (ok ? 'db-ok' : ok === null ? 'db-wait' : 'db-err');
+        if (lbl) lbl.textContent = msg;
+    }
+
+    // ── Detect file:// protocol ──────────────────────────────────────
+    var IS_FILE_PROTOCOL = window.location.protocol === 'file:';
+    if (IS_FILE_PROTOCOL) {
+        var hint = document.getElementById('dbHint');
+        if (hint) {
+            hint.style.display = 'block';
+            hint.innerHTML = '&#x26A0;&#xFE0F; You are opening this as a local file (file://). Google Sheets blocks requests from file://.<br>'
+                + 'To test locally, run: <strong style="color:#fde68a">python3 -m http.server 8080</strong> in your file&#39;s folder, then open <strong style="color:#fde68a">http://localhost:8080/trial_bench_live.html</strong>';
+        }
+        document.getElementById('debugBanner').classList.add('show');
     }
 
     // ── JSONP fetch ──────────────────────────────────────────────────
     function fetchSheetJSONP(sheetName) {
-        return new Promise((resolve, reject) => {
-            const cbName = '_gviz_' + sheetName.replace(/\s/g,'_') + '_' + Date.now();
-            const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&tq=select+*&sheet=${encodeURIComponent(sheetName)}&callback=${cbName}`;
+        return new Promise(function(resolve, reject) {
+            var cbName = '_gviz_' + sheetName.replace(/\W/g,'_') + '_' + Date.now();
+            // headers=2 tells gviz the first 2 rows are headers (title + column names)
+            // This means data.table.rows will contain only actual data rows
+            var url = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID
+                + '/gviz/tq?tqx=out:json&tq=select%20*&sheet='
+                + encodeURIComponent(sheetName)
+                + '&headers=2'
+                + '&callback=' + cbName;
+
+            var done = false;
+            function cleanup() {
+                done = true;
+                delete window[cbName];
+                var el = document.getElementById(cbName);
+                if (el) el.parentNode.removeChild(el);
+            }
 
             window[cbName] = function(data) {
-                delete window[cbName];
-                document.getElementById(cbName)?.remove();
+                cleanup();
                 try {
-                    const rows = data.table.rows.map(row =>
-                        row.c.map(cell => {
-                            if (!cell || cell.v === null || cell.v === undefined) return '';
-                            return String(cell.v).trim();
+                    if (!data || !data.table) {
+                        var got = data ? JSON.stringify(Object.keys(data)) : 'null';
+                        reject(new Error('No table in response for "' + sheetName + '". Got keys: ' + got));
+                        return;
+                    }
+                    // gviz returns header as col.label — data.table.rows contains DATA rows only (no header)
+                    var rows = (data.table.rows || [])
+                        .map(function(row) {
+                            if (!row || !row.c) return [];
+                            return row.c.map(function(cell) {
+                                if (!cell || cell.v === null || cell.v === undefined) return '';
+                                return String(cell.v).trim();
+                            });
                         })
-                    ).filter(r => r.some(c => c !== ''));
+                        .filter(function(r) { return r.some(function(c){ return c !== ''; }); });
                     resolve(rows);
-                } catch(e) { reject(e); }
+                } catch(e) { reject(new Error(sheetName + ': ' + e.message)); }
             };
 
-            const script = document.createElement('script');
+            var script = document.createElement('script');
             script.id = cbName;
             script.src = url;
-            script.onerror = () => {
-                delete window[cbName]; script.remove();
-                reject(new Error('Script load failed for: ' + sheetName));
+            script.onerror = function() {
+                cleanup();
+                reject(new Error('Sheet not accessible: "' + sheetName + '". Make sure the Google Sheet is shared as "Anyone with the link can view".'));
             };
             document.head.appendChild(script);
 
-            // Timeout after 10s
-            setTimeout(() => {
-                if (window[cbName]) {
-                    delete window[cbName];
-                    document.getElementById(cbName)?.remove();
-                    reject(new Error('Timeout for: ' + sheetName));
+            // Timeout after 12s
+            setTimeout(function() {
+                if (!done) {
+                    cleanup();
+                    reject(new Error('Timeout loading "' + sheetName + '" — sheet may be private or the tab name may be wrong.'));
                 }
-            }, 10000);
+            }, 12000);
         });
     }
 
@@ -429,15 +531,21 @@
             anyError = true;
         }
 
-        // Show banner only on error (or on first load so user can verify)
-        if (anyError) banner.classList.add('show');
+        // Show banner on every load so user can verify connection status
+        banner.classList.add('show');
+        if (anyError) {
+            var hint = document.getElementById('dbHint');
+            if (hint) hint.style.display = 'block';
+        } else {
+            // Auto-hide after 4s if all OK
+            setTimeout(function(){ banner.classList.remove('show'); }, 4000);
+        }
 
-        if (assignRes.status !== 'fulfilled' || lbRes.status !== 'fulfilled') return null;
-
+        // Return whatever we have — render with partial data rather than nothing
         return {
-            assignments: assignRes.value,
+            assignments: assignRes.status === 'fulfilled' ? assignRes.value : [],
             matches: matchRes.status === 'fulfilled' ? matchRes.value : [],
-            leaderboard: lbRes.value,
+            leaderboard: lbRes.status === 'fulfilled' ? lbRes.value : [],
         };
     }
 
@@ -658,18 +766,12 @@
         const todayMid=midnight(new Date());
         const yesterdayMid=midnight(new Date(+todayMid-864e5));
 
-        const filtered=matches.filter(row=>{
-            const dateStr=row[1]||'';
-            if(!dateStr)return true;
-            const d=parseDate(dateStr);
-            if(!d)return false;
-            const dm=midnight(d);
-            return dm>=yesterdayMid&&dm<=todayMid;
-        });
+        // Show all matches, sorted by date
+        var filtered = matches.slice();
 
         container.innerHTML='';
         if(filtered.length===0){
-            container.innerHTML=`<div style="text-align:center;padding:32px 20px;color:var(--text-muted);font-size:14px;">No matches today or yesterday.<br><span style="font-size:12px;opacity:0.6">Check back on matchdays.</span></div>`;
+            container.innerHTML='<div style="text-align:center;padding:32px 20px;color:var(--text-muted);font-size:14px;">No matches found.<br><span style="font-size:12px;opacity:0.6">Add matches to your sheet.</span></div>';
             return;
         }
 
@@ -686,7 +788,8 @@
             const rows=byDate[dateStr];
             const d=parseDate(dateStr);
             const isToday=d&&midnight(d).getTime()===todayMid.getTime();
-            const label=!d?dateStr:isToday?'📅 Today':`⏮ Yesterday — ${d.toLocaleDateString('en-US',{weekday:'short',day:'numeric',month:'short'})}`;
+            var isFuture=d&&midnight(d).getTime()>todayMid.getTime();
+            var label=!d?dateStr:isToday?'📅 Today':isFuture?('⏭ Upcoming — '+d.toLocaleDateString('en-US',{weekday:'short',day:'numeric',month:'short'})):('✅ '+d.toLocaleDateString('en-US',{weekday:'short',day:'numeric',month:'short'}));
             const hdr=document.createElement('div');
             hdr.style.cssText=`padding:4px 0 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:${isToday?'var(--accent)':'var(--text-muted)'};`;
             hdr.textContent=label;
@@ -797,7 +900,7 @@
     // ── Main fetch & render ──────────────────────────────────────────
     async function fetchAndRender() {
         const data = await fetchAllData();
-        if (!data) return;
+        if (!data || (!data.leaderboard.length && !data.assignments.length)) return;
         _appData = data;
         const {assignments, matches, leaderboard} = data;
         renderPodium(leaderboard);
