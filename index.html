@@ -127,6 +127,11 @@
             50% { text-shadow: 0 0 20px rgba(34, 197, 94, 0.7), 0 0 40px rgba(34, 197, 94, 0.2); }
         }
 
+        @keyframes redGlowPulse {
+            0%, 100% { text-shadow: 0 0 8px rgba(239, 68, 68, 0.4); opacity: 1; }
+            50% { text-shadow: 0 0 20px rgba(239, 68, 68, 0.8), 0 0 40px rgba(239, 68, 68, 0.3); opacity: 0.8; }
+        }
+
         @keyframes rankUp {
             0% { transform: translateY(0); opacity: 0; }
             50% { transform: translateY(-4px); }
@@ -383,6 +388,13 @@
             align-items: center;
             gap: 8px;
             flex-shrink: 0;
+        }
+
+        .ticker-item .ticker-upcoming {
+            color: var(--accent);
+            font-weight: 700;
+            font-size: 10px;
+            letter-spacing: 1px;
         }
 
         .ticker-item .ticker-live {
@@ -1632,7 +1644,7 @@
                 <div class="prize-info">
                     <div class="prize-rank">3rd Place</div>
                     <div class="prize-reward">25% Off Next Month</div>
-                    <div class="prize-desc">Discount on your next booking</div>
+                    <div class="prize-desc">Discount on your desk</div>
                 </div>
                 <div class="prize-leader"><span class="prize-leader-empty">TBD</span></div>
             </div>
@@ -1641,7 +1653,7 @@
                 <div class="prize-info">
                     <div class="prize-rank">4th &amp; 5th Place</div>
                     <div class="prize-reward">Team Lunch</div>
-                    <div class="prize-desc">Lunch on the house for the top 5</div>
+                    <div class="prize-desc">Lunch on the house</div>
                 </div>
                 <div class="prize-leader"><span class="prize-leader-empty">TBD</span></div>
             </div>
@@ -2429,8 +2441,8 @@
                 const status = matchStatus === 'ft'
                     ? `<span class="ticker-score">FT</span>`
                     : matchStatus === 'live'
-                        ? `<span class="ticker-live" style="animation:glowPulse 1.5s ease-in-out infinite;">● LIVE</span>`
-                        : `<span class="ticker-live">UPCOMING</span>`;
+                        ? `<span class="ticker-live" style="animation:redGlowPulse 1.5s ease-in-out infinite;">● LIVE</span>`
+                        : `<span class="ticker-upcoming">UPCOMING</span>`;
                 const p1Label = p1.name ? `${p1.name} (${team1})` : team1;
                 const p2Label = p2.name ? `${p2.name} (${team2})` : team2;
                 return `<div class="ticker-item">${status} ${p1Label} ${scoreStr} ${p2Label}</div>`;
@@ -2443,8 +2455,8 @@
         const PRIZES = [
             { rank: '1st Place',     medal: '🥇', cls: 'prize-1', reward: '1 Month Free Desk',    desc: 'Full month at the Trial Bench workspace' },
             { rank: '2nd Place',     medal: '🥈', cls: 'prize-2', reward: '15 Days Free Desk',    desc: 'Half-month at the workspace' },
-            { rank: '3rd Place',     medal: '🥉', cls: 'prize-3', reward: '25% Off Next Month',   desc: 'Discount on your next booking' },
-            { rank: '4th & 5th Place', medal: '🍽️', cls: 'prize-4', reward: 'Team Lunch',         desc: 'Lunch on the house for the top 5', span: 2 },
+            { rank: '3rd Place',     medal: '🥉', cls: 'prize-3', reward: '25% Off Next Month',   desc: 'Discount on your desk' },
+            { rank: '4th & 5th Place', medal: '🍽️', cls: 'prize-4', reward: 'Team Lunch',         desc: 'Lunch on the house', span: 2 },
         ];
 
         function renderPrizeTracker(leaderboard) {
