@@ -2302,14 +2302,14 @@
             const todayMid     = toMidnight(new Date());
             const yesterdayMid = toMidnight(new Date(+todayMid - 864e5));
 
-            // ── Top scorer: only from today/yesterday matches ─────────
+            // ── Top scorer: yesterday's matches only ─────────
             let topScorerCountry = null, topPts = -1;
             matches.forEach(row => {
                 const dateStr = row[1];
                 const d = parseSheetDate(dateStr);
                 if (!d) return;
                 const dMid = toMidnight(d);
-                if (dMid < yesterdayMid || dMid > todayMid) return;
+                if (dMid.getTime() !== yesterdayMid.getTime()) return;
 
                 const team1 = row[3], team2 = row[4], p1Raw = row[7], p2Raw = row[8];
                 const p1 = parseFloat(p1Raw) || 0;
@@ -2327,34 +2327,71 @@
                 }
             }
 
-            // ── Climber / Dropper via localStorage snapshot ───────────
-            // Build current rank map: { playerName: rank }
-            const currentRanks = {};
-            leaderboard.forEach((row, i) => {
-                const name = row[0];
-                if (name && name !== '0' && name.trim() !== '') currentRanks[name.trim()] = i + 1;
+            // ── Climber / Dropper: rank-based, comparing current rank vs pre-today rank ──
+            // Map country → player name
+            const countryToName = {};
+            if (assignments) {
+                assignments.forEach(([name, country]) => {
+                    if (country) countryToName[country.trim()] = name ? name.trim() : country.trim();
+                });
+            }
+
+            // Current points from leaderboard: { playerName: currentPts }
+            const currentPts = {};
+            leaderboard.forEach(row => {
+                const name = row[0] ? row[0].trim() : null;
+                const pts  = parseFloat(row[3] ?? row[2]) || 0;
+                if (name) currentPts[name] = pts;
             });
 
-            // Load previous snapshot
-            let prevRanks = {};
-            try {
-                const saved = localStorage.getItem('tbcup_ranks');
-                if (saved) prevRanks = JSON.parse(saved);
-            } catch(e) {}
+            // Tally points earned yesterday per country
+            const ptsEarnedRecent = {}; // { countryCode: pts }
+            matches.forEach(row => {
+                const dateStr = row[1];
+                const d = parseSheetDate(dateStr);
+                if (!d) return;
+                const dMid = toMidnight(d);
+                if (dMid.getTime() !== yesterdayMid.getTime()) return;
+                const team1 = row[3], team2 = row[4];
+                const p1 = parseFloat(row[7]) || 0;
+                const p2 = parseFloat(row[8]) || 0;
+                if (team1) ptsEarnedRecent[team1.trim()] = (ptsEarnedRecent[team1.trim()] || 0) + p1;
+                if (team2) ptsEarnedRecent[team2.trim()] = (ptsEarnedRecent[team2.trim()] || 0) + p2;
+            });
 
-            // Compute deltas
+            // Build previous points: subtract recent match points from current totals
+            const prevPts = {};
+            Object.entries(currentPts).forEach(([name, pts]) => {
+                // Find this player's country
+                const assignment = assignments ? assignments.find(([n]) => n && n.trim() === name) : null;
+                const country = assignment ? assignment[1].trim() : null;
+                const recentEarned = country ? (ptsEarnedRecent[country] || 0) : 0;
+                prevPts[name] = pts - recentEarned;
+            });
+
+            // Rank players by points (desc), ties broken by name alphabetically
+            function rankList(ptsMap) {
+                return Object.entries(ptsMap)
+                    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                    .map(([name], i) => ({ name, rank: i + 1 }));
+            }
+
+            const currentRanked = rankList(currentPts);
+            const prevRanked    = rankList(prevPts);
+
+            const prevRankMap = {};
+            prevRanked.forEach(({ name, rank }) => { prevRankMap[name] = rank; });
+
+            // Compute rank deltas for ALL players (positive = climbed up)
             let biggestClimber = null, biggestClimberDelta = 0;
             let biggestDropper = null, biggestDropperDelta = 0;
 
-            Object.entries(currentRanks).forEach(([name, rank]) => {
-                if (!prevRanks[name]) return; // no previous data for this player
-                const delta = prevRanks[name] - rank; // positive = climbed up
+            currentRanked.forEach(({ name, rank }) => {
+                if (prevRankMap[name] == null) return;
+                const delta = prevRankMap[name] - rank; // positive = moved up
                 if (delta > biggestClimberDelta) { biggestClimberDelta = delta; biggestClimber = name; }
                 if (delta < biggestDropperDelta) { biggestDropperDelta = delta; biggestDropper = name; }
             });
-
-            // Save current snapshot for next comparison
-            try { localStorage.setItem('tbcup_ranks', JSON.stringify(currentRanks)); } catch(e) {}
 
             // ── Render ────────────────────────────────────────────────
             const climberEl = document.querySelector('.highlight-card:nth-child(1) .highlight-value');
@@ -2362,19 +2399,19 @@
             const scorerEl  = document.querySelector('.highlight-card:nth-child(3) .highlight-value');
 
             if (climberEl) {
-                climberEl.innerHTML = biggestClimber
+                climberEl.innerHTML = biggestClimber && biggestClimberDelta > 0
                     ? `${biggestClimber} <span class="change up">▲${biggestClimberDelta}</span>`
-                    : `<span style="color:var(--text-muted);font-size:12px">Updating…</span>`;
+                    : `<span style="color:var(--text-muted);font-size:12px">No change yesterday</span>`;
             }
             if (dropperEl) {
-                dropperEl.innerHTML = biggestDropper
+                dropperEl.innerHTML = biggestDropper && biggestDropperDelta < 0
                     ? `${biggestDropper} <span class="change down">▼${Math.abs(biggestDropperDelta)}</span>`
-                    : `<span style="color:var(--text-muted);font-size:12px">Updating…</span>`;
+                    : `<span style="color:var(--text-muted);font-size:12px">No change yesterday</span>`;
             }
             if (scorerEl) {
                 scorerEl.innerHTML = topScorerCountry && topPts > 0
                     ? `${topScorerDisplay} <span class="change score">+${topPts} pts</span>`
-                    : `<span style="color:var(--text-muted);font-size:12px">No matches yet</span>`;
+                    : `<span style="color:var(--text-muted);font-size:12px">No matches yesterday</span>`;
             }
 
             // Re-bind highlight card interactions
