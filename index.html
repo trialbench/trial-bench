@@ -612,6 +612,9 @@
             font-size: 14px;
             font-weight: 700;
             color: var(--primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .highlight-value .change {
@@ -776,6 +779,11 @@
         .match-player.right {
             justify-content: flex-end;
             flex-direction: row-reverse;
+        }
+
+        .match-player.right .info {
+            align-items: flex-end;
+            text-align: right;
         }
 
         .match-player .avatar {
@@ -2269,7 +2277,7 @@
                             </div>
                             <div class="match-player right ${p2Class}">
                                 <div class="avatar">${c2.flag}</div>
-                                <div class="info" style="text-align:right">
+                                <div class="info">
                                     <span class="name">${p2Name}</span>
                                     <span class="flag">${p2Sub || c2.flag}</span>
                                 </div>
