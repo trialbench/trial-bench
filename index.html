@@ -1810,9 +1810,9 @@
                 // → [#, Date, Grp, Team1, Team2, Score1, Score2, PtsT1, PtsT2, Result, CST1, CST2]
 
                 // ── Leaderboard: A=Player, B=Country, C=Flag, D=Points
-                // Skip rows where col A is empty or a header keyword
+                // Skip rows where col D (Points) is not a number — catches title rows, headers, empties
                 const leaderboard = rawLeaderboard
-                    .filter(r => r[0] && r[0].trim() !== '' && !/^(Player|Leaderboard|Rank|Name|Pos)/i.test(r[0].trim()));
+                    .filter(r => r[3] && /^\d+(\.\d+)?$/.test(r[3].trim()));
 
                 // Remove any previous error panel on success
                 document.getElementById('_diagPanel')?.remove();
@@ -2000,13 +2000,13 @@
             container.innerHTML = '';
 
             order.forEach((row, i) => {
-                const [name, country, pts] = row;
+                const [name, country, flag, pts] = row;
                 const points = parseInt(pts) || 0;
                 const card = document.createElement('div');
                 card.className = `podium-card ${classes[i]}`;
                 card.innerHTML = `
                     <span class="rank-badge">${badges[i]}</span>
-                    <div class="player-name">${name} ${country}</div>
+                    <div class="player-name">${flag} ${name}</div>
                     <div class="points" data-target="${points}">0</div>
                     <div class="pts-label">pts</div>
                     <div class="form-dots"></div>`;
@@ -2039,9 +2039,9 @@
             const newSnapshot = {};
             let rank = 1;
             leaderboard.forEach((row, i) => {
-                const [name, country, pts] = row;
+                const [name, country, flag, pts] = row;
                 const points = parseInt(pts) || 0;
-                if (i > 0 && parseInt(leaderboard[i-1][2]) !== points) rank = i + 1;
+                if (i > 0 && parseInt(leaderboard[i-1][3]) !== points) rank = i + 1;
                 newSnapshot[name] = { rank, pts: points };
             });
 
@@ -2053,9 +2053,9 @@
             rank = 1;
 
             leaderboard.forEach((row, i) => {
-                const [name, country, pts] = row;
+                const [name, country, flag, pts] = row;
                 const points = parseInt(pts) || 0;
-                if (i > 0 && parseInt(leaderboard[i-1][2]) !== points) rank = i + 1;
+                if (i > 0 && parseInt(leaderboard[i-1][3]) !== points) rank = i + 1;
 
                 const prev       = _prevLeaderboard[name];
                 const rankDelta  = prev ? prev.rank - rank : 0;   // positive = climbed
@@ -2084,8 +2084,8 @@
                     <td><span class="${rankNumClass}">${rank}</span>${changeHTML}</td>
                     <td>
                         <div class="player-cell">
-                            <span class="flag">${country}</span>
-                            <span class="name">${name}</span>
+                            <span class="flag">${flag}</span>
+                            <span class="name">${name} <span style="color:var(--text-muted);font-weight:500;font-size:12px">${country}</span></span>
                         </div>
                     </td>
                     <td>—</td>
