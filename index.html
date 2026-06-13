@@ -2367,7 +2367,7 @@
                 const s2 = s2Raw !== '' ? s2Raw : null;
                 const p1 = teamMap[team1] || { name: team1, country: '' };
                 const p2 = teamMap[team2] || { name: team2, country: '' };
-                const scoreStr = (s1 !== null && s2 !== null) ? `${s1}-${s2}` : 'TBD';
+                const scoreStr = (s1 !== null && s2 !== null) ? `${s1}-${s2}` : 'vs';
                 const status   = (s1 !== null && s2 !== null) ? `<span class="ticker-score">FT</span>` : `<span class="ticker-live">UPCOMING</span>`;
                 const p1Label = p1.name ? `${p1.name} (${team1})` : team1;
                 const p2Label = p2.name ? `${p2.name} (${team2})` : team2;
