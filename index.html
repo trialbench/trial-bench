@@ -2327,7 +2327,7 @@
                 }
             }
 
-            // ── Climber / Dropper: rank-based, comparing current rank vs pre-today rank ──
+            // ── Climber / Dropper: rank-based, comparing current rank vs pre-yesterday rank ──
             // Map country → player name
             const countryToName = {};
             if (assignments) {
@@ -2336,16 +2336,26 @@
                 });
             }
 
-            // Current points from leaderboard: { playerName: currentPts }
+            // Current rank using tied ranking (same pts = same rank)
+            const currentRankMap = {};
+            const currentSorted = [...leaderboard]
+                .map(row => ({ name: row[0] ? row[0].trim() : null, pts: parseFloat(row[3]) || parseFloat(row[2]) || 0 }))
+                .filter(r => r.name);
+            currentSorted.forEach(({ name, pts }) => {
+                const rank = currentSorted.findIndex(r => r.pts === pts) + 1;
+                currentRankMap[name] = rank;
+            });
+
+            // Current points from leaderboard
             const currentPts = {};
             leaderboard.forEach(row => {
                 const name = row[0] ? row[0].trim() : null;
-                const pts  = parseFloat(row[3] ?? row[2]) || 0;
+                const pts  = parseFloat(row[3]) || parseFloat(row[2]) || 0;
                 if (name) currentPts[name] = pts;
             });
 
             // Tally points earned yesterday per country
-            const ptsEarnedRecent = {}; // { countryCode: pts }
+            const ptsEarnedYesterday = {}; // { countryCode: pts }
             matches.forEach(row => {
                 const dateStr = row[1];
                 const d = parseSheetDate(dateStr);
@@ -2355,40 +2365,44 @@
                 const team1 = row[3], team2 = row[4];
                 const p1 = parseFloat(row[7]) || 0;
                 const p2 = parseFloat(row[8]) || 0;
-                if (team1) ptsEarnedRecent[team1.trim()] = (ptsEarnedRecent[team1.trim()] || 0) + p1;
-                if (team2) ptsEarnedRecent[team2.trim()] = (ptsEarnedRecent[team2.trim()] || 0) + p2;
+                if (team1) ptsEarnedYesterday[team1.trim()] = (ptsEarnedYesterday[team1.trim()] || 0) + p1;
+                if (team2) ptsEarnedYesterday[team2.trim()] = (ptsEarnedYesterday[team2.trim()] || 0) + p2;
             });
 
-            // Build previous points: subtract recent match points from current totals
+            // Only compute deltas for players who had matches yesterday
+            // Reconstruct previous points by subtracting yesterday's earnings
             const prevPts = {};
             Object.entries(currentPts).forEach(([name, pts]) => {
-                // Find this player's country
                 const assignment = assignments ? assignments.find(([n]) => n && n.trim() === name) : null;
                 const country = assignment ? assignment[1].trim() : null;
-                const recentEarned = country ? (ptsEarnedRecent[country] || 0) : 0;
-                prevPts[name] = pts - recentEarned;
+                const earned = country ? (ptsEarnedYesterday[country] || 0) : 0;
+                prevPts[name] = pts - earned;
             });
 
-            // Rank players by points (desc), ties broken by name alphabetically
-            function rankList(ptsMap) {
-                return Object.entries(ptsMap)
-                    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-                    .map(([name], i) => ({ name, rank: i + 1 }));
-            }
-
-            const currentRanked = rankList(currentPts);
-            const prevRanked    = rankList(prevPts);
-
+            // Rank ALL players by previous points using tied ranking (same pts = same rank)
+            const prevSorted = Object.entries(prevPts).sort((a, b) => b[1] - a[1]);
             const prevRankMap = {};
-            prevRanked.forEach(({ name, rank }) => { prevRankMap[name] = rank; });
+            prevSorted.forEach(([name, pts], i) => {
+                // Assign rank = position of first player with this points total + 1
+                const rank = prevSorted.findIndex(([, p]) => p === pts) + 1;
+                prevRankMap[name] = rank;
+            });
 
-            // Compute rank deltas for ALL players (positive = climbed up)
+            // Only show climber/dropper for players who actually played yesterday
+            const playedYesterday = new Set(
+                Object.keys(ptsEarnedYesterday)
+                    .map(country => countryToName[country])
+                    .filter(Boolean)
+            );
+
             let biggestClimber = null, biggestClimberDelta = 0;
             let biggestDropper = null, biggestDropperDelta = 0;
 
-            currentRanked.forEach(({ name, rank }) => {
-                if (prevRankMap[name] == null) return;
-                const delta = prevRankMap[name] - rank; // positive = moved up
+            playedYesterday.forEach(name => {
+                const currentRank = currentRankMap[name];
+                const prevRank    = prevRankMap[name];
+                if (currentRank == null || prevRank == null) return;
+                const delta = prevRank - currentRank; // positive = moved up
                 if (delta > biggestClimberDelta) { biggestClimberDelta = delta; biggestClimber = name; }
                 if (delta < biggestDropperDelta) { biggestDropperDelta = delta; biggestDropper = name; }
             });
