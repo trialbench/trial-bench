@@ -2282,13 +2282,30 @@
 
         // ===== RENDER HIGHLIGHTS =====
         function renderHighlights(matches, leaderboard, assignments) {
-            // Top scorer today = player with highest points in matches (ptsT1/ptsT2 columns)
+            // ── Date helpers ──────────────────────────────────────────
+            const MONTHS = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+            function parseSheetDate(str) {
+                if (!str) return null;
+                const [d, m] = str.trim().split('-');
+                if (!d || !m || !MONTHS.hasOwnProperty(m)) return null;
+                return new Date(new Date().getFullYear(), MONTHS[m], parseInt(d));
+            }
+            function toMidnight(date) { const d = new Date(date); d.setHours(0,0,0,0); return d; }
+            const todayMid     = toMidnight(new Date());
+            const yesterdayMid = toMidnight(new Date(+todayMid - 864e5));
+
+            // ── Top scorer: only from today/yesterday matches ─────────
             let topScorerCountry = null, topPts = -1;
             matches.forEach(row => {
-                // New format: [#, Date, Grp, Team1, Team2, Score1, Score2, PtsT1, PtsT2, ...]
+                const dateStr = row[1];
+                const d = parseSheetDate(dateStr);
+                if (!d) return;
+                const dMid = toMidnight(d);
+                if (dMid < yesterdayMid || dMid > todayMid) return;
+
                 const team1 = row[3], team2 = row[4], p1Raw = row[7], p2Raw = row[8];
-                const p1 = parseInt(p1Raw) || 0;
-                const p2 = parseInt(p2Raw) || 0;
+                const p1 = parseFloat(p1Raw) || 0;
+                const p2 = parseFloat(p2Raw) || 0;
                 if (p1 > topPts) { topPts = p1; topScorerCountry = team1; }
                 if (p2 > topPts) { topPts = p2; topScorerCountry = team2; }
             });
@@ -2296,27 +2313,63 @@
             // Look up player name for top scorer country
             let topScorerDisplay = topScorerCountry || '—';
             if (topScorerCountry && assignments) {
-                const match = assignments.find(([name, country]) => country && country.trim() === topScorerCountry.trim());
-                if (match && match[0]) {
-                    topScorerDisplay = `${match[0]} <span style="color:var(--text-muted);font-size:12px;font-weight:500">${topScorerCountry}</span>`;
+                const found = assignments.find(([name, country]) => country && country.trim() === topScorerCountry.trim());
+                if (found && found[0]) {
+                    topScorerDisplay = `${found[0]} <span style="color:var(--text-muted);font-size:12px;font-weight:500">${topScorerCountry}</span>`;
                 }
             }
 
-            // Biggest climber / dropper — computed from leaderboard rank vs. previous session rank
-            // Since we only have a single ranking snapshot here, we display top/bottom movers
-            // by treating rank position as the indicator. You can extend this with a "PrevRank" column.
-            const climber = leaderboard.length >= 2 ? leaderboard[leaderboard.length - 2][0] : (leaderboard[0]?.[0] ?? '—');
-            const dropper = leaderboard.length >= 1 ? leaderboard[leaderboard.length - 1][0] : '—';
+            // ── Climber / Dropper via localStorage snapshot ───────────
+            // Build current rank map: { playerName: rank }
+            const currentRanks = {};
+            leaderboard.forEach((row, i) => {
+                const name = row[0];
+                if (name && name !== '0' && name.trim() !== '') currentRanks[name.trim()] = i + 1;
+            });
 
-            const climberEl   = document.querySelector('.highlight-card:nth-child(1) .highlight-value');
-            const dropperEl   = document.querySelector('.highlight-card:nth-child(2) .highlight-value');
-            const scorerEl    = document.querySelector('.highlight-card:nth-child(3) .highlight-value');
+            // Load previous snapshot
+            let prevRanks = {};
+            try {
+                const saved = localStorage.getItem('tbcup_ranks');
+                if (saved) prevRanks = JSON.parse(saved);
+            } catch(e) {}
 
-            if (climberEl) climberEl.innerHTML = `${climber} <span class="change up">↑</span>`;
-            if (dropperEl) dropperEl.innerHTML = `${dropper} <span class="change down">↓</span>`;
-            if (scorerEl && topScorerCountry) scorerEl.innerHTML = `${topScorerDisplay} <span class="change score">+${topPts} pts</span>`;
+            // Compute deltas
+            let biggestClimber = null, biggestClimberDelta = 0;
+            let biggestDropper = null, biggestDropperDelta = 0;
 
-            // Re-bind highlight card interactions after DOM update
+            Object.entries(currentRanks).forEach(([name, rank]) => {
+                if (!prevRanks[name]) return; // no previous data for this player
+                const delta = prevRanks[name] - rank; // positive = climbed up
+                if (delta > biggestClimberDelta) { biggestClimberDelta = delta; biggestClimber = name; }
+                if (delta < biggestDropperDelta) { biggestDropperDelta = delta; biggestDropper = name; }
+            });
+
+            // Save current snapshot for next comparison
+            try { localStorage.setItem('tbcup_ranks', JSON.stringify(currentRanks)); } catch(e) {}
+
+            // ── Render ────────────────────────────────────────────────
+            const climberEl = document.querySelector('.highlight-card:nth-child(1) .highlight-value');
+            const dropperEl = document.querySelector('.highlight-card:nth-child(2) .highlight-value');
+            const scorerEl  = document.querySelector('.highlight-card:nth-child(3) .highlight-value');
+
+            if (climberEl) {
+                climberEl.innerHTML = biggestClimber
+                    ? `${biggestClimber} <span class="change up">▲${biggestClimberDelta}</span>`
+                    : `<span style="color:var(--text-muted);font-size:12px">Updating…</span>`;
+            }
+            if (dropperEl) {
+                dropperEl.innerHTML = biggestDropper
+                    ? `${biggestDropper} <span class="change down">▼${Math.abs(biggestDropperDelta)}</span>`
+                    : `<span style="color:var(--text-muted);font-size:12px">Updating…</span>`;
+            }
+            if (scorerEl) {
+                scorerEl.innerHTML = topScorerCountry && topPts > 0
+                    ? `${topScorerDisplay} <span class="change score">+${topPts} pts</span>`
+                    : `<span style="color:var(--text-muted);font-size:12px">No matches yet</span>`;
+            }
+
+            // Re-bind highlight card interactions
             document.querySelectorAll('.highlight-card').forEach(card => {
                 card.addEventListener('mouseenter', function() { this.style.transform = 'translateX(6px)'; });
                 card.addEventListener('mouseleave', function() { this.style.transform = ''; });
