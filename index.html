@@ -1788,34 +1788,47 @@
             }
 
             try {
-                const [rawAssignments, rawMatches, rawLeaderboard] = await Promise.all([
+                const [rawAssignments, rawMatches, rawLeaderboard, rawHighlights] = await Promise.all([
                     fetchSheetCSV('Assignments'),
                     fetchSheetCSV('Matches'),
                     fetchSheetCSV('Leaderboard'),
+                    fetchSheetCSV('Highlights'),
                 ]);
 
                 // ── Assignments: A=#, B=PlayerName, C=Country, D=Flag
-                // Skip rows where col A is not a plain integer (title/header rows)
                 const assignments = rawAssignments
                     .filter(r => r[0] && /^\d+$/.test(r[0].trim()))
                     .map(r => [r[1], r[2], r[3]]); // → [PlayerName, Country, Flag]
 
                 // ── Matches: A=#, B=Date, C=Grp, D=Team1, E=Team2, F=Score1, G=Score2,
                 //            H=PtsT1, I=PtsT2, J=Result, K=CST1, L=CST2
-                // Skip rows where col A is not a number (title/header rows)
                 const matches = rawMatches
                     .filter(r => r[0] && /^\d+$/.test(r[0].trim()))
                     .map(r => [r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11]]);
                 // → [#, Date, Grp, Team1, Team2, Score1, Score2, PtsT1, PtsT2, Result, CST1, CST2]
 
                 // ── Leaderboard: A=Player, B=Country, C=Flag, D=Points
-                // Skip rows where col D (Points) is not a number — catches title rows, headers, empties
                 const leaderboard = rawLeaderboard
                     .filter(r => r[3] && /^\d+(\.\d+)?$/.test(r[3].trim()));
 
+                // ── Highlights: A=Key, B=Player, C=Flag, D=Delta, E=Country
+                // Rows keyed as 'climber', 'dropper', 'top_scorer'
+                const highlights = {};
+                rawHighlights.forEach(r => {
+                    const key = r[0] ? r[0].trim().toLowerCase() : '';
+                    if (['climber', 'dropper', 'top_scorer'].includes(key)) {
+                        highlights[key] = {
+                            player:  r[1] ? r[1].trim() : '—',
+                            flag:    r[2] ? r[2].trim() : '',
+                            delta:   r[3] ? r[3].trim() : '',
+                            country: r[4] ? r[4].trim() : '',
+                        };
+                    }
+                });
+
                 // Remove any previous error panel on success
                 document.getElementById('_diagPanel')?.remove();
-                return { assignments, matches, leaderboard };
+                return { assignments, matches, leaderboard, highlights };
             } catch (err) {
                 const testUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Leaderboard`;
                 showDiag(`<b>${err.message}</b><br><br>
@@ -2289,138 +2302,35 @@
 
 
         // ===== RENDER HIGHLIGHTS =====
-        function renderHighlights(matches, leaderboard, assignments) {
-            // ── Date helpers ──────────────────────────────────────────
-            const MONTHS = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
-            function parseSheetDate(str) {
-                if (!str) return null;
-                const [d, m] = str.trim().split('-');
-                if (!d || !m || !MONTHS.hasOwnProperty(m)) return null;
-                return new Date(new Date().getFullYear(), MONTHS[m], parseInt(d));
-            }
-            function toMidnight(date) { const d = new Date(date); d.setHours(0,0,0,0); return d; }
-            const todayMid     = toMidnight(new Date());
-            const yesterdayMid = toMidnight(new Date(+todayMid - 864e5));
-
-            // ── Top scorer: yesterday's matches only ─────────
-            let topScorerCountry = null, topPts = -1;
-            matches.forEach(row => {
-                const dateStr = row[1];
-                const d = parseSheetDate(dateStr);
-                if (!d) return;
-                const dMid = toMidnight(d);
-                if (dMid.getTime() !== yesterdayMid.getTime()) return;
-
-                const team1 = row[3], team2 = row[4], p1Raw = row[7], p2Raw = row[8];
-                const p1 = parseFloat(p1Raw) || 0;
-                const p2 = parseFloat(p2Raw) || 0;
-                if (p1 > topPts) { topPts = p1; topScorerCountry = team1; }
-                if (p2 > topPts) { topPts = p2; topScorerCountry = team2; }
-            });
-
-            // Look up player name for top scorer country
-            let topScorerDisplay = topScorerCountry || '—';
-            if (topScorerCountry && assignments) {
-                const found = assignments.find(([name, country]) => country && country.trim() === topScorerCountry.trim());
-                if (found && found[0]) {
-                    topScorerDisplay = `${found[0]} <span style="color:var(--text-muted);font-size:12px;font-weight:500">${topScorerCountry}</span>`;
-                }
-            }
-
-            // ── Climber / Dropper: rank-based, comparing current rank vs pre-yesterday rank ──
-            // Map country → player name
-            const countryToName = {};
-            if (assignments) {
-                assignments.forEach(([name, country]) => {
-                    if (country) countryToName[country.trim()] = name ? name.trim() : country.trim();
-                });
-            }
-
-            // Helper: build a tied rank map from an array of {name, pts} sorted desc by pts
-            // Players with equal pts share the rank of the first among them
-            function buildRankMap(entries) {
-                // entries: [{name, pts}] already sorted desc
-                const map = {};
-                entries.forEach(({ name, pts }, i) => {
-                    // rank = index of first entry with this pts value + 1
-                    const firstIdx = entries.findIndex(e => e.pts === pts);
-                    map[name] = firstIdx + 1;
-                });
-                return map;
-            }
-
-            // Current rank from leaderboard (sheet is already sorted desc by pts)
-            const currentSorted = leaderboard
-                .map(row => ({ name: row[0] ? row[0].trim() : null, pts: parseFloat(row[3]) || parseFloat(row[2]) || 0 }))
-                .filter(r => r.name);
-            const currentRankMap = buildRankMap(currentSorted);
-
-            // Current points lookup
-            const currentPts = {};
-            currentSorted.forEach(({ name, pts }) => { currentPts[name] = pts; });
-
-            // Tally points earned yesterday per country
-            const ptsEarnedYesterday = {}; // { countryCode: pts }
-            matches.forEach(row => {
-                const dateStr = row[1];
-                const d = parseSheetDate(dateStr);
-                if (!d) return;
-                const dMid = toMidnight(d);
-                if (dMid.getTime() !== yesterdayMid.getTime()) return;
-                const team1 = row[3], team2 = row[4];
-                const p1 = parseFloat(row[7]) || 0;
-                const p2 = parseFloat(row[8]) || 0;
-                if (team1) ptsEarnedYesterday[team1.trim()] = (ptsEarnedYesterday[team1.trim()] || 0) + p1;
-                if (team2) ptsEarnedYesterday[team2.trim()] = (ptsEarnedYesterday[team2.trim()] || 0) + p2;
-            });
-
-            // Reconstruct previous points by subtracting yesterday's earnings
-            const prevPts = {};
-            currentSorted.forEach(({ name, pts }) => {
-                const assignment = assignments ? assignments.find(([n]) => n && n.trim() === name) : null;
-                const country = assignment ? assignment[1].trim() : null;
-                const earned = country ? (ptsEarnedYesterday[country] || 0) : 0;
-                prevPts[name] = pts - earned;
-            });
-
-            // Sort previous points desc and build tied rank map
-            const prevSorted = Object.entries(prevPts)
-                .map(([name, pts]) => ({ name, pts }))
-                .sort((a, b) => b.pts - a.pts);
-            const prevRankMap = buildRankMap(prevSorted);
-
-            // Compute deltas for ALL players
-            let biggestClimber = null, biggestClimberDelta = 0;
-            let biggestDropper = null, biggestDropperDelta = 0;
-
-            currentSorted.forEach(({ name }) => {
-                const currentRank = currentRankMap[name];
-                const prevRank    = prevRankMap[name];
-                if (currentRank == null || prevRank == null) return;
-                const delta = prevRank - currentRank; // positive = moved up
-                if (delta > biggestClimberDelta) { biggestClimberDelta = delta; biggestClimber = name; }
-                if (delta < biggestDropperDelta) { biggestDropperDelta = delta; biggestDropper = name; }
-            });
-
-            // ── Render ────────────────────────────────────────────────
+        function renderHighlights(highlights, matches) {
             const climberEl = document.querySelector('.highlight-card:nth-child(1) .highlight-value');
             const dropperEl = document.querySelector('.highlight-card:nth-child(2) .highlight-value');
             const scorerEl  = document.querySelector('.highlight-card:nth-child(3) .highlight-value');
 
+            const noData = '<span style="color:var(--text-muted);font-size:12px">Updating…</span>';
+
             if (climberEl) {
-                climberEl.innerHTML = biggestClimber && biggestClimberDelta > 0
-                    ? `${biggestClimber} <span class="change up">▲${biggestClimberDelta}</span>`
-                    : `<span style="color:var(--text-muted);font-size:12px">No change yesterday</span>`;
+                const c = highlights && highlights.climber;
+                const delta = c ? parseInt(c.delta) : 0;
+                climberEl.innerHTML = (c && c.player && c.player !== '—' && delta > 0)
+                    ? `${c.player} <span style="color:var(--text-muted);font-size:12px;font-weight:500">${c.country}</span> <span class="change up">▲${delta}</span>`
+                    : noData;
             }
+
             if (dropperEl) {
-                dropperEl.innerHTML = biggestDropper && biggestDropperDelta < 0
-                    ? `${biggestDropper} <span class="change down">▼${Math.abs(biggestDropperDelta)}</span>`
-                    : `<span style="color:var(--text-muted);font-size:12px">No change yesterday</span>`;
+                const d = highlights && highlights.dropper;
+                const delta = d ? parseInt(d.delta) : 0;
+                dropperEl.innerHTML = (d && d.player && d.player !== '—' && delta < 0)
+                    ? `${d.player} <span style="color:var(--text-muted);font-size:12px;font-weight:500">${d.country}</span> <span class="change down">▼${Math.abs(delta)}</span>`
+                    : noData;
             }
+
             if (scorerEl) {
-                scorerEl.innerHTML = topScorerCountry && topPts > 0
-                    ? `${topScorerDisplay} <span class="change score">+${topPts} pts</span>`
-                    : `<span style="color:var(--text-muted);font-size:12px">No matches yesterday</span>`;
+                const s = highlights && highlights.top_scorer;
+                const pts = s ? parseInt(s.delta) : 0;
+                scorerEl.innerHTML = (s && s.player && s.player !== '—' && pts > 0)
+                    ? `${s.player} <span style="color:var(--text-muted);font-size:12px;font-weight:500">${s.country}</span> <span class="change score">+${pts} pts</span>`
+                    : noData;
             }
 
             // Re-bind highlight card interactions
@@ -2432,7 +2342,7 @@
             });
         }
 
-        // ===== RENDER TICKER =====
+                // ===== RENDER TICKER =====
         function renderTicker(matches, assignments) {
             const ticker = document.querySelector('.ticker');
             if (!ticker) return;
@@ -2558,12 +2468,12 @@
             if (!data) return; // silently keep static content if fetch fails
 
             _appData = data; // store globally for popup
-            const { assignments, matches, leaderboard } = data;
+            const { assignments, matches, leaderboard, highlights } = data;
 
             renderPodium(leaderboard, assignments);
             renderLeaderboard(leaderboard);
             renderMatches(matches, assignments);
-            renderHighlights(matches, leaderboard, assignments);
+            renderHighlights(highlights, matches);
             renderTicker(matches, assignments);
             renderPrizeTracker(leaderboard);
             updateTimestamp();
