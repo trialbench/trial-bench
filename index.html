@@ -2335,8 +2335,33 @@
                 if (name) teamMap[name.trim()] = { name: name.trim(), country: country.trim() };
             });
 
-            const items = matches.map(row => {
-                // New format: [#, Date, Grp, Team1, Team2, Score1, Score2, ...]
+            // Reuse same date helpers as renderMatches
+            const MONTHS = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+            function parseSheetDate(str) {
+                if (!str) return null;
+                const [d, m] = str.trim().split('-');
+                if (!d || !m || !MONTHS.hasOwnProperty(m)) return null;
+                return new Date(new Date().getFullYear(), MONTHS[m], parseInt(d));
+            }
+            function toMidnight(date) { const d = new Date(date); d.setHours(0,0,0,0); return d; }
+            const todayMid     = toMidnight(new Date());
+            const yesterdayMid = toMidnight(new Date(+todayMid - 864e5));
+
+            const filtered = matches.filter(row => {
+                const dateStr = row[1];
+                if (!dateStr) return false;
+                const d = parseSheetDate(dateStr);
+                if (!d) return false;
+                const dMid = toMidnight(d);
+                return dMid >= yesterdayMid && dMid <= todayMid;
+            });
+
+            if (filtered.length === 0) {
+                ticker.innerHTML = '<div class="ticker-item">No matches today or yesterday</div>';
+                return;
+            }
+
+            const items = filtered.map(row => {
                 const team1 = row[3], team2 = row[4], s1Raw = row[5], s2Raw = row[6];
                 const s1 = s1Raw !== '' ? s1Raw : null;
                 const s2 = s2Raw !== '' ? s2Raw : null;
@@ -2344,7 +2369,7 @@
                 const p2 = teamMap[team2] || { name: team2, country: '' };
                 const scoreStr = (s1 !== null && s2 !== null) ? `${s1}-${s2}` : 'TBD';
                 const status   = (s1 !== null && s2 !== null) ? `<span class="ticker-score">FT</span>` : `<span class="ticker-live">UPCOMING</span>`;
-                return `<div class="ticker-item">${status} ${p1.name} ${p1.country} ${scoreStr} ${p2.name} ${p2.country}</div>`;
+                return `<div class="ticker-item">${status} ${p1.name} ${team1} ${scoreStr} ${p2.name} ${team2}</div>`;
             }).join('');
 
             ticker.innerHTML = items + items; // duplicate for seamless loop
