@@ -1788,11 +1788,12 @@
             }
 
             try {
-                const [rawAssignments, rawMatches, rawLeaderboard, rawHighlights] = await Promise.all([
+                const [rawAssignments, rawMatches, rawLeaderboard, rawHighlights, rawSchedule] = await Promise.all([
                     fetchSheetCSV('Assignments'),
                     fetchSheetCSV('Matches'),
                     fetchSheetCSV('Leaderboard'),
                     fetchSheetCSV('Highlights'),
+                    fetchSheetCSV('Schedule'),
                 ]);
 
                 // ── Assignments: A=#, B=PlayerName, C=Country, D=Flag
@@ -1828,7 +1829,14 @@
 
                 // Remove any previous error panel on success
                 document.getElementById('_diagPanel')?.remove();
-                return { assignments, matches, leaderboard, highlights };
+                // ── Schedule: A=Matchday#, B=Date, C=Group, D=Team1, E=Team2, F=KickoffIST
+                const schedule = rawSchedule
+                    .filter(r => r[0] && /^\d+$/.test(r[0].trim()))
+                    .map(r => ({ md: r[0], date: r[1], grp: r[2], team1: r[3], team2: r[4], time: r[5] }));
+
+                // Remove any previous error panel on success
+                document.getElementById('_diagPanel')?.remove();
+                return { assignments, matches, leaderboard, highlights, schedule };
             } catch (err) {
                 const testUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Leaderboard`;
                 showDiag(`<b>${err.message}</b><br><br>
@@ -2148,7 +2156,24 @@
 
         // ===== RENDER MATCHES =====
         // Shows: yesterday's results + today's fixtures only
-        function renderMatches(matches, assignments) {
+        // ── Match status based on kick-off time (IST) ──
+        // Returns: 'upcoming' | 'live' | 'ft'
+        function getMatchStatus(timeStr, hasScore) {
+            if (hasScore) return 'ft';
+            if (!timeStr) return 'upcoming';
+            const [hh, mm] = timeStr.split(':').map(Number);
+            if (isNaN(hh) || isNaN(mm)) return 'upcoming';
+            const now = new Date();
+            const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+            const ist = new Date(utc + 5.5 * 3600000);
+            const nowMins = ist.getHours() * 60 + ist.getMinutes();
+            const kickoffMins = hh * 60 + mm;
+            if (nowMins < kickoffMins) return 'upcoming';
+            if (nowMins < kickoffMins + 120) return 'live';
+            return 'ft';
+        }
+
+        function renderMatches(matches, assignments, schedule) {
             const container = document.querySelector('.matches-container');
             if (!container) return;
 
@@ -2254,14 +2279,28 @@
                     const p2Sub  = c2.player ? team2 : '';
 
                     let statusHTML, scoreDisplay, p1Class = '', p2Class = '';
-                    if (hasScore) {
-                        scoreDisplay = `<span class="score-anim">${score1} - ${score2}</span>`;
-                        statusHTML   = `<span class="match-status ft">Full Time</span>`;
-                        if (score1 > score2) p1Class = 'winner';
-                        else if (score2 > score1) p2Class = 'winner';
+                    const sched = schedule && schedule.find(s =>
+                        s.date === dateStr && s.team1 === team1 && s.team2 === team2
+                    );
+                    const matchStatus = getMatchStatus(sched ? sched.time : null, hasScore);
+
+                    if (matchStatus === 'ft') {
+                        scoreDisplay = hasScore
+                            ? `<span class="score-anim">${score1} - ${score2}</span>`
+                            : `<span style="font-size:13px;color:var(--text-muted);">FT</span>`;
+                        statusHTML = `<span class="match-status ft">Full Time</span>`;
+                        if (hasScore) {
+                            if (score1 > score2) p1Class = 'winner';
+                            else if (score2 > score1) p2Class = 'winner';
+                        }
+                    } else if (matchStatus === 'live') {
+                        scoreDisplay = `<span style="font-size:13px;color:#ef4444;font-weight:700;letter-spacing:1px;">LIVE</span>`;
+                        statusHTML   = `<span class="match-status live"><span class="status-dot"></span>Live</span>`;
                     } else {
-                        scoreDisplay = `<span style="font-size:13px;color:var(--accent);letter-spacing:1px;">TBD</span>`;
-                        statusHTML   = `<span class="match-status upcoming">Upcoming</span>`;
+                        scoreDisplay = sched
+                            ? `<span style="font-size:12px;color:var(--accent);letter-spacing:1px;">${sched.time}</span>`
+                            : `<span style="font-size:13px;color:var(--accent);letter-spacing:1px;">TBD</span>`;
+                        statusHTML = `<span class="match-status upcoming">Upcoming</span>`;
                     }
 
                     const card = document.createElement('div');
@@ -2343,7 +2382,7 @@
         }
 
                 // ===== RENDER TICKER =====
-        function renderTicker(matches, assignments) {
+        function renderTicker(matches, assignments, schedule) {
             const ticker = document.querySelector('.ticker');
             if (!ticker) return;
 
@@ -2385,7 +2424,13 @@
                 const p1 = teamMap[team1] || { name: team1, country: '' };
                 const p2 = teamMap[team2] || { name: team2, country: '' };
                 const scoreStr = (s1 !== null && s2 !== null) ? `${s1}-${s2}` : 'vs';
-                const status   = (s1 !== null && s2 !== null) ? `<span class="ticker-score">FT</span>` : `<span class="ticker-live">UPCOMING</span>`;
+                const sched = schedule && schedule.find(s => s.date === row[1] && s.team1 === team1 && s.team2 === team2);
+                const matchStatus = getMatchStatus(sched ? sched.time : null, s1 !== null && s2 !== null);
+                const status = matchStatus === 'ft'
+                    ? `<span class="ticker-score">FT</span>`
+                    : matchStatus === 'live'
+                        ? `<span class="ticker-live" style="background:#ef4444;animation:pulse 1s infinite;">🔴 LIVE</span>`
+                        : `<span class="ticker-live">UPCOMING</span>`;
                 const p1Label = p1.name ? `${p1.name} (${team1})` : team1;
                 const p2Label = p2.name ? `${p2.name} (${team2})` : team2;
                 return `<div class="ticker-item">${status} ${p1Label} ${scoreStr} ${p2Label}</div>`;
@@ -2468,13 +2513,13 @@
             if (!data) return; // silently keep static content if fetch fails
 
             _appData = data; // store globally for popup
-            const { assignments, matches, leaderboard, highlights } = data;
+            const { assignments, matches, leaderboard, highlights, schedule } = data;
 
             renderPodium(leaderboard, assignments);
             renderLeaderboard(leaderboard);
-            renderMatches(matches, assignments);
+            renderMatches(matches, assignments, schedule);
             renderHighlights(highlights, matches);
-            renderTicker(matches, assignments);
+            renderTicker(matches, assignments, schedule);
             renderPrizeTracker(leaderboard);
             updateTimestamp();
         }
