@@ -1585,8 +1585,6 @@
                 <tr>
                     <th>#</th>
                     <th>Player</th>
-                    <th>Pld</th>
-                    <th>GD</th>
                     <th>Pts</th>
                 </tr>
             </thead>
@@ -2088,8 +2086,6 @@
                             <span class="name">${name} <span style="color:var(--text-muted);font-weight:500;font-size:12px">${country}</span></span>
                         </div>
                     </td>
-                    <td>—</td>
-                    <td class="gd-cell">—</td>
                     <td class="points-cell" data-target="${points}" data-prev="${prev ? prev.pts : points}">0</td>`;
                 tbody.appendChild(tr);
 
@@ -2273,7 +2269,7 @@
                             </div>
                             <div class="match-player right ${p2Class}">
                                 <div class="avatar">${c2.flag}</div>
-                                <div class="info">
+                                <div class="info" style="text-align:right">
                                     <span class="name">${p2Name}</span>
                                     <span class="flag">${p2Sub || c2.flag}</span>
                                 </div>
@@ -2292,17 +2288,26 @@
 
 
         // ===== RENDER HIGHLIGHTS =====
-        function renderHighlights(matches, leaderboard) {
+        function renderHighlights(matches, leaderboard, assignments) {
             // Top scorer today = player with highest points in matches (ptsT1/ptsT2 columns)
-            let topScorer = null, topPts = -1;
+            let topScorerCountry = null, topPts = -1;
             matches.forEach(row => {
                 // New format: [#, Date, Grp, Team1, Team2, Score1, Score2, PtsT1, PtsT2, ...]
                 const team1 = row[3], team2 = row[4], p1Raw = row[7], p2Raw = row[8];
                 const p1 = parseInt(p1Raw) || 0;
                 const p2 = parseInt(p2Raw) || 0;
-                if (p1 > topPts) { topPts = p1; topScorer = team1; }
-                if (p2 > topPts) { topPts = p2; topScorer = team2; }
+                if (p1 > topPts) { topPts = p1; topScorerCountry = team1; }
+                if (p2 > topPts) { topPts = p2; topScorerCountry = team2; }
             });
+
+            // Look up player name for top scorer country
+            let topScorerDisplay = topScorerCountry || '—';
+            if (topScorerCountry && assignments) {
+                const match = assignments.find(([name, country]) => country && country.trim() === topScorerCountry.trim());
+                if (match && match[0]) {
+                    topScorerDisplay = `${match[0]} <span style="color:var(--text-muted);font-size:12px;font-weight:500">${topScorerCountry}</span>`;
+                }
+            }
 
             // Biggest climber / dropper — computed from leaderboard rank vs. previous session rank
             // Since we only have a single ranking snapshot here, we display top/bottom movers
@@ -2316,7 +2321,7 @@
 
             if (climberEl) climberEl.innerHTML = `${climber} <span class="change up">↑</span>`;
             if (dropperEl) dropperEl.innerHTML = `${dropper} <span class="change down">↓</span>`;
-            if (scorerEl && topScorer) scorerEl.innerHTML = `${topScorer} <span class="change score">+${topPts} pts</span>`;
+            if (scorerEl && topScorerCountry) scorerEl.innerHTML = `${topScorerDisplay} <span class="change score">+${topPts} pts</span>`;
 
             // Re-bind highlight card interactions after DOM update
             document.querySelectorAll('.highlight-card').forEach(card => {
@@ -2431,7 +2436,7 @@
             renderPodium(leaderboard, assignments);
             renderLeaderboard(leaderboard);
             renderMatches(matches, assignments);
-            renderHighlights(matches, leaderboard);
+            renderHighlights(matches, leaderboard, assignments);
             renderTicker(matches, assignments);
             renderPrizeTracker(leaderboard);
             updateTimestamp();
