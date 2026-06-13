@@ -2336,23 +2336,28 @@
                 });
             }
 
-            // Current rank using tied ranking (same pts = same rank)
-            const currentRankMap = {};
-            const currentSorted = [...leaderboard]
+            // Helper: build a tied rank map from an array of {name, pts} sorted desc by pts
+            // Players with equal pts share the rank of the first among them
+            function buildRankMap(entries) {
+                // entries: [{name, pts}] already sorted desc
+                const map = {};
+                entries.forEach(({ name, pts }, i) => {
+                    // rank = index of first entry with this pts value + 1
+                    const firstIdx = entries.findIndex(e => e.pts === pts);
+                    map[name] = firstIdx + 1;
+                });
+                return map;
+            }
+
+            // Current rank from leaderboard (sheet is already sorted desc by pts)
+            const currentSorted = leaderboard
                 .map(row => ({ name: row[0] ? row[0].trim() : null, pts: parseFloat(row[3]) || parseFloat(row[2]) || 0 }))
                 .filter(r => r.name);
-            currentSorted.forEach(({ name, pts }) => {
-                const rank = currentSorted.findIndex(r => r.pts === pts) + 1;
-                currentRankMap[name] = rank;
-            });
+            const currentRankMap = buildRankMap(currentSorted);
 
-            // Current points from leaderboard
+            // Current points lookup
             const currentPts = {};
-            leaderboard.forEach(row => {
-                const name = row[0] ? row[0].trim() : null;
-                const pts  = parseFloat(row[3]) || parseFloat(row[2]) || 0;
-                if (name) currentPts[name] = pts;
-            });
+            currentSorted.forEach(({ name, pts }) => { currentPts[name] = pts; });
 
             // Tally points earned yesterday per country
             const ptsEarnedYesterday = {}; // { countryCode: pts }
@@ -2369,36 +2374,26 @@
                 if (team2) ptsEarnedYesterday[team2.trim()] = (ptsEarnedYesterday[team2.trim()] || 0) + p2;
             });
 
-            // Only compute deltas for players who had matches yesterday
             // Reconstruct previous points by subtracting yesterday's earnings
             const prevPts = {};
-            Object.entries(currentPts).forEach(([name, pts]) => {
+            currentSorted.forEach(({ name, pts }) => {
                 const assignment = assignments ? assignments.find(([n]) => n && n.trim() === name) : null;
                 const country = assignment ? assignment[1].trim() : null;
                 const earned = country ? (ptsEarnedYesterday[country] || 0) : 0;
                 prevPts[name] = pts - earned;
             });
 
-            // Rank ALL players by previous points using tied ranking (same pts = same rank)
-            const prevSorted = Object.entries(prevPts).sort((a, b) => b[1] - a[1]);
-            const prevRankMap = {};
-            prevSorted.forEach(([name, pts], i) => {
-                // Assign rank = position of first player with this points total + 1
-                const rank = prevSorted.findIndex(([, p]) => p === pts) + 1;
-                prevRankMap[name] = rank;
-            });
+            // Sort previous points desc and build tied rank map
+            const prevSorted = Object.entries(prevPts)
+                .map(([name, pts]) => ({ name, pts }))
+                .sort((a, b) => b.pts - a.pts);
+            const prevRankMap = buildRankMap(prevSorted);
 
-            // Only show climber/dropper for players who actually played yesterday
-            const playedYesterday = new Set(
-                Object.keys(ptsEarnedYesterday)
-                    .map(country => countryToName[country])
-                    .filter(Boolean)
-            );
-
+            // Compute deltas for ALL players
             let biggestClimber = null, biggestClimberDelta = 0;
             let biggestDropper = null, biggestDropperDelta = 0;
 
-            playedYesterday.forEach(name => {
+            currentSorted.forEach(({ name }) => {
                 const currentRank = currentRankMap[name];
                 const prevRank    = prevRankMap[name];
                 if (currentRank == null || prevRank == null) return;
