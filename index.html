@@ -2332,7 +2332,7 @@
 
             const teamMap = {};
             assignments.forEach(([name, country]) => {
-                if (name) teamMap[name.trim()] = { name: name.trim(), country: country.trim() };
+                if (country) teamMap[country.trim()] = { name: name ? name.trim() : '', country: country.trim() };
             });
 
             // Reuse same date helpers as renderMatches
@@ -2369,7 +2369,9 @@
                 const p2 = teamMap[team2] || { name: team2, country: '' };
                 const scoreStr = (s1 !== null && s2 !== null) ? `${s1}-${s2}` : 'TBD';
                 const status   = (s1 !== null && s2 !== null) ? `<span class="ticker-score">FT</span>` : `<span class="ticker-live">UPCOMING</span>`;
-                return `<div class="ticker-item">${status} ${p1.name} ${team1} ${scoreStr} ${p2.name} ${team2}</div>`;
+                const p1Label = p1.name ? `${p1.name} (${team1})` : team1;
+                const p2Label = p2.name ? `${p2.name} (${team2})` : team2;
+                return `<div class="ticker-item">${status} ${p1Label} ${scoreStr} ${p2Label}</div>`;
             }).join('');
 
             ticker.innerHTML = items + items; // duplicate for seamless loop
