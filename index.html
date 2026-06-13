@@ -2429,7 +2429,7 @@
                 const status = matchStatus === 'ft'
                     ? `<span class="ticker-score">FT</span>`
                     : matchStatus === 'live'
-                        ? `<span class="ticker-live" style="background:#ef4444;animation:pulse 1s infinite;">🔴 LIVE</span>`
+                        ? `<span class="ticker-live" style="animation:glowPulse 1.5s ease-in-out infinite;">● LIVE</span>`
                         : `<span class="ticker-live">UPCOMING</span>`;
                 const p1Label = p1.name ? `${p1.name} (${team1})` : team1;
                 const p2Label = p2.name ? `${p2.name} (${team2})` : team2;
