@@ -2645,7 +2645,8 @@
                 return;
             }
 
-            const STATUS_ORDER = { live: 0, upcoming: 1, ft: 2 };
+            // live → upcoming → today FT → yesterday FT
+            const STATUS_ORDER = { live: 0, upcoming: 1, ft_today: 2, ft_yesterday: 3 };
 
             const items = filtered
                 .map(row => {
@@ -2657,6 +2658,11 @@
                     const scoreStr = (s1 !== null && s2 !== null) ? `${s1}-${s2}` : 'vs';
                     const sched = schedule && schedule.find(s => s.date === row[1] && s.team1 === team1 && s.team2 === team2);
                     const matchStatus = getMatchStatus(sched ? sched.time : null, s1 !== null && s2 !== null);
+                    // Distinguish today FT vs yesterday FT for sort ordering
+                    const rowDateMid = toMidnight(parseSheetDate(row[1]));
+                    const sortKey = matchStatus === 'ft'
+                        ? (rowDateMid >= todayMid ? 'ft_today' : 'ft_yesterday')
+                        : matchStatus;
                     const status = matchStatus === 'ft'
                         ? `<span class="ticker-score">FT</span>`
                         : matchStatus === 'live'
@@ -2664,9 +2670,9 @@
                             : `<span class="ticker-upcoming">UPCOMING</span>`;
                     const p1Label = p1.name ? `${p1.name} (${team1})` : team1;
                     const p2Label = p2.name ? `${p2.name} (${team2})` : team2;
-                    return { matchStatus, html: `<div class="ticker-item">${status} ${p1Label} ${scoreStr} ${p2Label}</div>` };
+                    return { sortKey, html: `<div class="ticker-item">${status} ${p1Label} ${scoreStr} ${p2Label}</div>` };
                 })
-                .sort((a, b) => (STATUS_ORDER[a.matchStatus] ?? 3) - (STATUS_ORDER[b.matchStatus] ?? 3))
+                .sort((a, b) => (STATUS_ORDER[a.sortKey] ?? 4) - (STATUS_ORDER[b.sortKey] ?? 4))
                 .map(item => item.html)
                 .join('');
 
