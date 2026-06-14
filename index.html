@@ -579,6 +579,29 @@
         .podium-tied-bar.silver { color: #888;    background: rgba(192,192,192,0.15); border: 1px solid rgba(192,192,192,0.3); }
         .podium-tied-bar.bronze { color: #7a4010; background: rgba(205,127,50,0.18); border: 1px solid rgba(205,127,50,0.32); }
 
+        /* "+X more" expand pill */
+        .podium-more-pill {
+            display: inline-block;
+            margin: 5px auto 2px;
+            padding: 3px 12px;
+            border-radius: 999px;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .podium-more-pill:hover { opacity: 0.75; }
+        .podium-more-pill:active { opacity: 0.5; }
+        .podium-more-pill.gold   { color: #7a5800; background: rgba(255,215,0,0.22); border: 1px solid rgba(255,215,0,0.35); }
+        .podium-more-pill.silver { color: #888;    background: rgba(192,192,192,0.15); border: 1px solid rgba(192,192,192,0.3); }
+        .podium-more-pill.bronze { color: #7a4010; background: rgba(205,127,50,0.18); border: 1px solid rgba(205,127,50,0.32); }
+
+        .podium-hidden-names {
+            animation: fadeIn 0.25s ease forwards;
+        }
+
         /* ===== HIGHLIGHTS STRIP ===== */
         .highlights-strip {
             padding: 0 20px 28px;
@@ -2216,6 +2239,41 @@
         }
 
         // ===== RENDER PODIUM (top 3) =====
+        // Tie-collapse rules:
+        //   • If a slot has 3+ tied players: show max 2 names + "+X more" pill (expandable)
+        //   • Applies to all three podium positions
+        const PODIUM_MAX_NAMES = 2;
+        const BIG_TIE_THRESHOLD = 3;
+
+        function buildNamesHTML(slot, tierColorClass) {
+            const rows = slot.rows;
+            const isBigTie = rows.length >= BIG_TIE_THRESHOLD;
+            const visibleRows = isBigTie ? rows.slice(0, PODIUM_MAX_NAMES) : rows;
+            const hiddenRows  = isBigTie ? rows.slice(PODIUM_MAX_NAMES)    : [];
+
+            let html = '';
+            visibleRows.forEach(function(row) {
+                html += '<div class="player-name">' + row[2] + ' ' + row[0] + '</div>';
+            });
+
+            if (isBigTie && hiddenRows.length > 0) {
+                // Hidden names (collapsed by default)
+                html += '<div class="podium-hidden-names" style="display:none">';
+                hiddenRows.forEach(function(row) {
+                    html += '<div class="player-name">' + row[2] + ' ' + row[0] + '</div>';
+                });
+                html += '</div>';
+                // "+X more" pill
+                html += '<div class="podium-more-pill ' + tierColorClass + '" data-count="' + hiddenRows.length + '">'
+                      + '+' + hiddenRows.length + ' more</div>';
+            }
+
+            if (rows.length > 1) {
+                html += '<div class="podium-tied-bar ' + tierColorClass + '">TIED</div>';
+            }
+            return html;
+        }
+
         function renderPodium(leaderboard, assignments) {
             if (leaderboard.length < 1) return;
 
@@ -2234,27 +2292,21 @@
                 }
             });
 
+            // Always show up to 3 podium positions regardless of tie size
             const podiumSlots = slots.slice(0, 3);
-            // Visual order: 2nd, 1st, 3rd
-            const visualOrder = [podiumSlots[1], podiumSlots[0], podiumSlots[2]].filter(Boolean);
+
+            // Visual order: [2nd, 1st, 3rd] — filter out missing
+            const orderedSlots  = [podiumSlots[1], podiumSlots[0], podiumSlots[2]].filter(Boolean);
             const classes   = ['podium-2nd', 'podium-1st', 'podium-3rd'];
             const badges    = ['🥈', '🥇', '🥉'];
             const tierColor = ['silver', 'gold', 'bronze'];
 
-            visualOrder.forEach(function(slot, i) {
+            orderedSlots.forEach(function(slot, i) {
                 const pts = slot.pts;
                 const card = document.createElement('div');
                 card.className = 'podium-card ' + classes[i];
 
-                // Build names HTML: all names first, then one tied bar at the end if tied
-                let namesHTML = '';
-                slot.rows.forEach(function(row) {
-                    const name = row[0], flag = row[2];
-                    namesHTML += '<div class="player-name">' + flag + ' ' + name + '</div>';
-                });
-                if (slot.rows.length > 1) {
-                    namesHTML += '<div class="podium-tied-bar ' + tierColor[i] + '">TIED</div>';
-                }
+                const namesHTML = buildNamesHTML(slot, tierColor[i]);
 
                 card.innerHTML =
                     '<span class="rank-badge">' + badges[i] + '</span>' +
@@ -2265,6 +2317,21 @@
 
                 container.appendChild(card);
 
+                // "+X more" expand toggle
+                const morePill = card.querySelector('.podium-more-pill');
+                if (morePill) {
+                    morePill.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        const hiddenEl = card.querySelector('.podium-hidden-names');
+                        const expanded = hiddenEl.style.display !== 'none';
+                        hiddenEl.style.display = expanded ? 'none' : 'block';
+                        morePill.textContent = expanded
+                            ? '+' + morePill.dataset.count + ' more'
+                            : 'Show less';
+                    });
+                }
+
+                // Card click → popup for first visible player
                 const firstName = slot.rows[0][0];
                 card.addEventListener('click', function() { openPlayerPopup(firstName, _appData); });
                 card.addEventListener('mouseenter', function() { this.style.transform = 'translateY(-8px) scale(1.04)'; });
