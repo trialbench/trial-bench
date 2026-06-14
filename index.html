@@ -564,6 +564,57 @@
 
         .podium-3rd .points { color: var(--bronze); }
 
+        /* ===== TIED PODIUM STACKING ===== */
+        .podium-tied-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            flex: 1;
+        }
+        .podium-tied-stack.podium-1st-stack { flex: 1.35; }
+
+        .podium-tied-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 5px 8px;
+            background: rgba(255,255,255,0.04);
+            border-left: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        .podium-tied-bar.gold   { color: var(--gold);   border-color: rgba(255,215,0,0.25); background: rgba(255,215,0,0.06); }
+        .podium-tied-bar.silver { color: var(--silver); border-color: rgba(192,192,192,0.2); background: rgba(192,192,192,0.05); }
+        .podium-tied-bar.bronze { color: var(--bronze); border-color: rgba(205,127,50,0.2); background: rgba(205,127,50,0.05); }
+        .podium-tied-bar::before,
+        .podium-tied-bar::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            opacity: 0.4;
+        }
+        .podium-tied-bar.gold::before,   .podium-tied-bar.gold::after   { background: var(--gold); }
+        .podium-tied-bar.silver::before, .podium-tied-bar.silver::after { background: var(--silver); }
+        .podium-tied-bar.bronze::before, .podium-tied-bar.bronze::after { background: var(--bronze); }
+
+        /* Cards inside a stack lose their individual border-radius on touching edges */
+        .podium-tied-stack .podium-card:first-child {
+            border-radius: 20px 20px 0 0;
+            border-bottom: none;
+        }
+        .podium-tied-stack .podium-card:last-child {
+            border-radius: 0 0 20px 20px;
+            border-top: none;
+        }
+        .podium-tied-stack .podium-card {
+            flex: none;
+            width: 100%;
+        }
+
         /* ===== HIGHLIGHTS STRIP ===== */
         .highlights-strip {
             padding: 0 20px 28px;
@@ -2203,38 +2254,83 @@
         // ===== RENDER PODIUM (top 3) =====
         function renderPodium(leaderboard, assignments) {
             if (leaderboard.length < 1) return;
-            const top3 = leaderboard.slice(0, 3); // sorted by sheet
-            const order = [top3[1], top3[0], top3[2]].filter(Boolean); // 2nd, 1st, 3rd visual order
-            const classes = ['podium-2nd', 'podium-1st', 'podium-3rd'];
-            const badges  = ['🥈', '🥇', '🥉'];
 
             const container = document.querySelector('.podium-container');
             if (!container) return;
             container.innerHTML = '';
 
-            order.forEach((row, i) => {
-                const [name, country, flag, pts] = row;
-                const points = parseInt(pts) || 0;
-                const card = document.createElement('div');
-                card.className = `podium-card ${classes[i]}`;
-                card.innerHTML = `
-                    <span class="rank-badge">${badges[i]}</span>
-                    <div class="player-name">${flag} ${name}</div>
-                    <div class="points" data-target="${points}">0</div>
-                    <div class="pts-label">pts</div>
-                    <div class="form-dots"></div>`;
-                container.appendChild(card);
-                // Click → popup
-                card.addEventListener('click', () => openPlayerPopup(name, _appData));
-                // Hover interactions
-                card.addEventListener('mouseenter', function() { this.style.transform = 'translateY(-8px) scale(1.04)'; });
-                card.addEventListener('mouseleave', function() { this.style.transform = ''; });
-                card.addEventListener('touchstart', function() { this.style.transform = 'translateY(-4px) scale(0.98)'; });
-                card.addEventListener('touchend',   function() { this.style.transform = ''; });
+            // ── Group leaderboard into tied slots ──────────────────────────
+            // Each slot: { pts, rows: [...] }
+            const slots = [];
+            leaderboard.forEach(function(row) {
+                const pts = parseInt(row[3]) || 0;
+                if (slots.length > 0 && slots[slots.length - 1].pts === pts) {
+                    slots[slots.length - 1].rows.push(row);
+                } else {
+                    slots.push({ pts: pts, rows: [row] });
+                }
             });
 
-            setTimeout(() => {
-                container.querySelectorAll('.points[data-target]').forEach(el => {
+            // Take only enough slots to fill 3 podium positions
+            const podiumSlots = slots.slice(0, 3);
+
+            // Visual order: 2nd, 1st, 3rd
+            const visualOrder = [podiumSlots[1], podiumSlots[0], podiumSlots[2]].filter(Boolean);
+            const classes  = ['podium-2nd', 'podium-1st', 'podium-3rd'];
+            const stackCls = ['podium-2nd-stack', 'podium-1st-stack', 'podium-3rd-stack'];
+            const badges   = ['🥈', '🥇', '🥉'];
+            const tierColor = ['silver', 'gold', 'bronze'];
+
+            visualOrder.forEach(function(slot, i) {
+                const isTied = slot.rows.length > 1;
+
+                function makeCard(row) {
+                    const name   = row[0], flag = row[2], pts = parseInt(row[3]) || 0;
+                    const card   = document.createElement('div');
+                    card.className = 'podium-card ' + classes[i];
+                    card.innerHTML =
+                        '<span class="rank-badge">' + badges[i] + '</span>' +
+                        '<div class="player-name">' + flag + ' ' + name + '</div>' +
+                        '<div class="points" data-target="' + pts + '">0</div>' +
+                        '<div class="pts-label">pts</div>' +
+                        '<div class="form-dots"></div>';
+                    card.addEventListener('click', function() { openPlayerPopup(name, _appData); });
+                    card.addEventListener('mouseenter', function() { if (!isTied) this.style.transform = 'translateY(-8px) scale(1.04)'; });
+                    card.addEventListener('mouseleave', function() { this.style.transform = ''; });
+                    card.addEventListener('touchstart', function() { this.style.transform = 'translateY(-4px) scale(0.98)'; });
+                    card.addEventListener('touchend',   function() { this.style.transform = ''; });
+                    return card;
+                }
+
+                if (!isTied) {
+                    // Single player — render exactly as before
+                    container.appendChild(makeCard(slot.rows[0]));
+                } else {
+                    // Multiple tied players — wrap in a stack
+                    const stack = document.createElement('div');
+                    stack.className = 'podium-tied-stack ' + stackCls[i];
+
+                    slot.rows.forEach(function(row, ri) {
+                        if (ri > 0) {
+                            // Insert TIED bar between players
+                            const bar = document.createElement('div');
+                            bar.className = 'podium-tied-bar ' + tierColor[i];
+                            bar.textContent = '= TIED';
+                            stack.appendChild(bar);
+                        }
+                        stack.appendChild(makeCard(row));
+                    });
+
+                    // Stack hover lifts the whole block
+                    stack.addEventListener('mouseenter', function() { this.style.transform = 'translateY(-8px) scale(1.04)'; });
+                    stack.addEventListener('mouseleave', function() { this.style.transform = ''; });
+
+                    container.appendChild(stack);
+                }
+            });
+
+            setTimeout(function() {
+                container.querySelectorAll('.points[data-target]').forEach(function(el) {
                     animateCountUp(el, parseInt(el.dataset.target), 1000);
                 });
             }, 400);
