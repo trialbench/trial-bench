@@ -2353,7 +2353,7 @@
 
 
         // ===== RENDER HIGHLIGHTS =====
-        function renderHighlights(highlights, matches) {
+        function renderHighlights(highlights, matches, leaderboard) {
             const climberEl = document.querySelector('.highlight-card:nth-child(1) .highlight-value');
             const dropperEl = document.querySelector('.highlight-card:nth-child(2) .highlight-value');
             const scorerEl  = document.querySelector('.highlight-card:nth-child(3) .highlight-value');
@@ -2377,11 +2377,46 @@
             }
 
             if (scorerEl) {
-                const s = highlights && highlights.top_scorer;
-                const pts = s ? parseInt(s.delta) : 0;
-                scorerEl.innerHTML = (s && s.player && s.player !== '—' && pts > 0)
-                    ? `${s.player} <span style="color:var(--text-muted);font-size:12px;font-weight:500">${s.country}</span> <span class="change score">+${pts} pts</span>`
-                    : noData;
+                // Calculate top scorer live from today's matches (IST)
+                var todayIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+                var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                var todayStr = todayIST.getDate() + '-' + MON[todayIST.getMonth()];
+
+                // Tally points per country from today's completed matches
+                var ptsTally = {};
+                if (matches && matches.length) {
+                    matches.forEach(function(m) {
+                        var date  = m[1] ? m[1].trim() : '';
+                        var team1 = m[3] ? m[3].trim() : '';
+                        var team2 = m[4] ? m[4].trim() : '';
+                        var pts1  = m[7] ? parseFloat(m[7]) : 0;
+                        var pts2  = m[8] ? parseFloat(m[8]) : 0;
+                        var hasScore = m[5] !== undefined && m[5] !== '' && m[6] !== undefined && m[6] !== '';
+                        if (date !== todayStr || !hasScore) return;
+                        if (team1) ptsTally[team1] = (ptsTally[team1] || 0) + pts1;
+                        if (team2) ptsTally[team2] = (ptsTally[team2] || 0) + pts2;
+                    });
+                }
+
+                // Find max points earned today
+                var maxPts = 0;
+                Object.keys(ptsTally).forEach(function(c) { if (ptsTally[c] > maxPts) maxPts = ptsTally[c]; });
+
+                // Collect all countries tied at max
+                var topCountries = Object.keys(ptsTally).filter(function(c) { return ptsTally[c] === maxPts; });
+
+                if (maxPts > 0 && topCountries.length > 0) {
+                    // Map countries to player names + flags via leaderboard
+                    var labels = topCountries.map(function(country) {
+                        var row = leaderboard ? leaderboard.find(function(r) { return r[1] && r[1].trim() === country; }) : null;
+                        var flag = row && row[2] ? row[2].trim() : '';
+                        var name = row && row[0] ? row[0].trim() : country;
+                        return flag + ' ' + name;
+                    });
+                    scorerEl.innerHTML = labels.join(' & ') + ' <span class="change score">+' + maxPts + ' pts</span>';
+                } else {
+                    scorerEl.innerHTML = noData;
+                }
             }
 
             // Re-bind highlight card interactions
@@ -2530,7 +2565,7 @@
             renderPodium(leaderboard, assignments);
             renderLeaderboard(leaderboard);
             renderMatches(matches, assignments, schedule);
-            renderHighlights(highlights, matches);
+            renderHighlights(highlights, matches, leaderboard);
             renderTicker(matches, assignments, schedule);
             renderPrizeTracker(leaderboard);
             updateTimestamp();
