@@ -2117,6 +2117,15 @@
         // Global data store so popup can access after render
         let _appData = null;
 
+        // Group column holds a single letter ("A", "B"...) during group stage,
+        // or a round code ("R32", "R16", "QF", "SF", "F") during knockouts.
+        const KNOCKOUT_LABELS = { R32: 'Round of 32', R16: 'Round of 16', QF: 'Quarterfinal', SF: 'Semifinal', F: 'Final' };
+        function formatStageLabel(val) {
+            if (!val) return 'Group Stage';
+            const key = val.trim().toUpperCase();
+            return KNOCKOUT_LABELS[key] || `Group ${val}`;
+        }
+
         function openPlayerPopup(playerName, allData) {
             if (!allData) return;
             const { assignments, matches, leaderboard } = allData;
@@ -2132,24 +2141,13 @@
             const totalPts = lbIndex >= 0 ? parseInt(leaderboard[lbIndex][3] ?? leaderboard[lbIndex][2]) || 0 : 0;
 
             // Compute per-match stats for this player's country
-            // Matches sheet: [MD, Date, Group, Team1, Team2, Score1, Score2, PtsT1, PtsT2, Result, CST1, CST2]
-            // or old format: [Team1, Team2, Score1, Score2, PtsT1, PtsT2]
-            // Detect format by checking if col index 2 is a single letter (group) or a long name (team)
-            const isNewFormat = matches[0] && matches[0][2] && matches[0][2].length === 1;
+            // Matches sheet is always: [MD, Date, Group, Team1, Team2, Score1, Score2, PtsT1, PtsT2, Result, CST1, CST2]
 
             let wins = 0, draws = 0, losses = 0, cleanSheets = 0, matchPts = 0;
             const matchRows = [];
 
             matches.forEach(row => {
-                let md, date, grp, team1, team2, s1Raw, s2Raw, pts1Raw, pts2Raw, cs1Raw, cs2Raw;
-                if (isNewFormat) {
-                    [md, date, grp, team1, team2, s1Raw, s2Raw, pts1Raw, pts2Raw, , cs1Raw, cs2Raw] = row;
-                } else {
-                    [team1, team2, s1Raw, s2Raw, pts1Raw, pts2Raw] = row;
-                    md = ''; date = ''; grp = '';
-                    cs1Raw = (s2Raw === '0' || s2Raw === 0) ? '✅' : '';
-                    cs2Raw = (s1Raw === '0' || s1Raw === 0) ? '✅' : '';
-                }
+                const [md, date, grp, team1, team2, s1Raw, s2Raw, pts1Raw, pts2Raw, , cs1Raw, cs2Raw] = row;
 
                 const isTeam1 = team1.trim() === country.trim();
                 const isTeam2 = team2.trim() === country.trim();
@@ -2204,7 +2202,7 @@
                     const ptsLabel = m.result === 'upcoming'
                         ? `<span class="pm-pts" style="color:var(--text-muted)">TBD</span>`
                         : `<div class="pm-pts">+${m.pts} pts${m.isCS ? '<span class="pm-cs">🧤 Clean Sheet</span>' : ''}</div>`;
-                    const meta = [m.date, m.grp ? `Group ${m.grp}` : ''].filter(Boolean).join(' · ');
+                    const meta = [m.date, m.grp ? formatStageLabel(m.grp) : ''].filter(Boolean).join(' · ');
                     return `<div class="popup-match-row">
                         <div class="pm-badge ${m.result}">${badgeLabel}</div>
                         <div class="pm-teams">
@@ -2544,9 +2542,8 @@
 
             // ── Filter to yesterday + today ───────────────────────────────
             const filtered = matches.filter(row => {
-                const isNew = row[2] && row[2].length === 1;
-                const dateStr = isNew ? row[1] : null;
-                if (!dateStr) return true; // legacy rows without dates — show all
+                const dateStr = row[1] || null;
+                if (!dateStr) return true; // rows without a date — show all
                 const d = parseSheetDate(dateStr);
                 if (!d) return false;
                 const dMid = toMidnight(d);
@@ -2557,8 +2554,7 @@
             const byDate = {};
             const dateOrder = [];
             filtered.forEach(row => {
-                const isNew = row[2] && row[2].length === 1;
-                const key = isNew ? (row[1] || 'Matches') : 'Matches';
+                const key = row[1] || 'Matches';
                 if (!byDate[key]) { byDate[key] = []; dateOrder.push(key); }
                 byDate[key].push(row);
             });
@@ -2596,11 +2592,8 @@
                 container.appendChild(hdr);
 
                 rows.forEach(row => {
-                    const isNew = row[2] && row[2].length === 1;
-                    const [team1, team2, s1Raw, s2Raw] = isNew
-                        ? [row[3], row[4], row[5], row[6]]
-                        : [row[0], row[1], row[2], row[3]];
-                    const grpLabel = isNew && row[2] ? `Group ${row[2]}` : 'Group Stage';
+                    const [team1, team2, s1Raw, s2Raw] = [row[3], row[4], row[5], row[6]];
+                    const grpLabel = formatStageLabel(row[2]);
 
                     const score1 = s1Raw !== '' && s1Raw !== undefined ? parseInt(s1Raw) : null;
                     const score2 = s2Raw !== '' && s2Raw !== undefined ? parseInt(s2Raw) : null;
@@ -2666,7 +2659,7 @@
                                 lines.push(`<div class="pred-strip-line exact"><span class="pred-label">🎯 Perfect prediction:</span><span class="pred-names">${exactNames.join(' · ')}</span></div>`);
                             }
                             if (correctCount > 0) {
-                                lines.push(`<div class="pred-strip-line correct"><span class="pred-label">✅</span>${correctCount} predicted this right</div>`);
+                                lines.push(`<div class="pred-strip-line correct"><span class="pred-label">✅</span>${correctCount} predicted the correct result</div>`);
                             }
                             if (lines.length > 0) {
                                 predStripHTML = `<div class="pred-strip">${lines.join('')}</div>`;
@@ -2929,7 +2922,7 @@
             if (!data) return; // silently keep static content if fetch fails
 
             _appData = data; // store globally for popup
-            const { assignments, matches, leaderboard, highlights, schedule, predictions } = data;
+            const { assignments, matches, leaderboard, highlights, schedule } = data;
 
             renderPodium(leaderboard, assignments);
             renderLeaderboard(leaderboard);
