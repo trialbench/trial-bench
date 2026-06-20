@@ -739,6 +739,30 @@
             border-color: rgba(34, 197, 94, 0.12);
         }
 
+        .pred-strip {
+            margin-top: 10px;
+            padding: 8px 12px;
+            background: rgba(255,255,255,0.04);
+            border-top: 1px solid rgba(255,255,255,0.07);
+            border-radius: 0 0 12px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .pred-strip-line {
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+        .pred-strip-line .pred-label {
+            font-weight: 700;
+            margin-right: 4px;
+        }
+        .pred-strip-line.exact .pred-label { color: #f59e0b; }
+        .pred-strip-line.correct .pred-label { color: #34d399; }
+        .pred-strip-line.exact .pred-names { color: #fcd34d; }
+
         .match-card:active {
             transform: translateY(-1px) scale(0.985);
             transition: all 0.1s ease;
@@ -2019,12 +2043,13 @@
             }
 
             try {
-                const [rawAssignments, rawMatches, rawLeaderboard, rawHighlights, rawSchedule] = await Promise.all([
+                const [rawAssignments, rawMatches, rawLeaderboard, rawHighlights, rawSchedule, rawPredictions] = await Promise.all([
                     fetchSheetCSV('Assignments'),
                     fetchSheetCSV('Matches'),
                     fetchSheetCSV('Leaderboard'),
                     fetchSheetCSV('Highlights'),
                     fetchSheetCSV('Schedule'),
+                    fetchSheetCSV('Predictions').catch(() => []),
                 ]);
 
                 // ── Assignments: A=#, B=PlayerName, C=Country, D=Flag
@@ -2065,9 +2090,13 @@
                     .filter(r => r[0] && /^\d+$/.test(r[0].trim()))
                     .map(r => ({ md: r[0], date: r[1], grp: r[2], team1: r[3], team2: r[4], time: r[5] }));
 
-                // Remove any previous error panel on success
+                // Predictions: A=PlayerID, B=PlayerName, C=MatchID, D=Date, E=Score1, F=Score2
+                const predictions = rawPredictions
+                    .filter(r => r[0] && r[1] && r[2] && r[0].trim().toLowerCase() !== 'playerid')
+                    .map(r => ({ playerName: r[1].trim(), matchId: r[2].trim(), s1: parseInt(r[4]), s2: parseInt(r[5]) }));
+
                 document.getElementById('_diagPanel')?.remove();
-                return { assignments, matches, leaderboard, highlights, schedule };
+                return { assignments, matches, leaderboard, highlights, schedule, predictions };
             } catch (err) {
                 const testUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Leaderboard`;
                 showDiag(`<b>${err.message}</b><br><br>
@@ -2473,7 +2502,15 @@
             return 'ft';
         }
 
-        function renderMatches(matches, assignments, schedule) {
+        function renderMatches(matches, assignments, schedule, predictions) {
+            // Build prediction lookup: matchId -> { exactNames[], correctCount }
+            const predMap = {};
+            (predictions || []).forEach(p => {
+                if (!predMap[p.matchId]) predMap[p.matchId] = { exactNames: [], correctCount: 0 };
+                predMap[p.matchId]._preds = predMap[p.matchId]._preds || [];
+                predMap[p.matchId]._preds.push(p);
+            });
+
             const container = document.querySelector('.matches-container');
             if (!container) return;
 
@@ -2605,6 +2642,38 @@
 
                     const card = document.createElement('div');
                     card.className = 'match-card';
+                    // Build prediction strip for completed matches
+                    let predStripHTML = '';
+                    if (matchStatus === 'ft' && hasScore) {
+                        const t1 = team1.replace(/[^a-zA-Z0-9]/g, '_');
+                        const t2 = team2.replace(/[^a-zA-Z0-9]/g, '_');
+                        // Try to find predictions by team names since matchId format varies
+                        const allPreds = (predictions || []).filter(p => {
+                            const mid = p.matchId || '';
+                            return mid.includes(t1) && mid.includes(t2);
+                        });
+                        if (allPreds.length > 0) {
+                            const exactNames = allPreds
+                                .filter(p => p.s1 === score1 && p.s2 === score2)
+                                .map(p => p.playerName);
+                            const correctCount = allPreds.filter(p => {
+                                const predResult = Math.sign(p.s1 - p.s2);
+                                const actResult  = Math.sign(score1 - score2);
+                                return predResult === actResult && !(p.s1 === score1 && p.s2 === score2);
+                            }).length;
+                            const lines = [];
+                            if (exactNames.length > 0) {
+                                lines.push(`<div class="pred-strip-line exact"><span class="pred-label">🎯 Perfect prediction:</span><span class="pred-names">${exactNames.join(' · ')}</span></div>`);
+                            }
+                            if (correctCount > 0) {
+                                lines.push(`<div class="pred-strip-line correct"><span class="pred-label">✅</span>${correctCount} predicted this right</div>`);
+                            }
+                            if (lines.length > 0) {
+                                predStripHTML = `<div class="pred-strip">${lines.join('')}</div>`;
+                            }
+                        }
+                    }
+
                     card.innerHTML = `
                         <div class="match-status-bar">${statusHTML}</div>
                         <div class="match-stage">${grpLabel}</div>
@@ -2627,7 +2696,8 @@
                                 </div>
                                 <div class="avatar">${c2.flag}</div>
                             </div>
-                        </div>`;
+                        </div>
+                        ${predStripHTML}`;
                     container.appendChild(card);
 
                     card.addEventListener('mousemove', (e) => {
@@ -2859,11 +2929,11 @@
             if (!data) return; // silently keep static content if fetch fails
 
             _appData = data; // store globally for popup
-            const { assignments, matches, leaderboard, highlights, schedule } = data;
+            const { assignments, matches, leaderboard, highlights, schedule, predictions } = data;
 
             renderPodium(leaderboard, assignments);
             renderLeaderboard(leaderboard);
-            renderMatches(matches, assignments, schedule);
+            renderMatches(matches, assignments, schedule, predictions);
             renderHighlights(highlights, matches, leaderboard);
             renderTicker(matches, assignments, schedule);
             renderPrizeTracker(leaderboard);
