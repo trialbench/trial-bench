@@ -2043,13 +2043,14 @@
             }
 
             try {
-                const [rawAssignments, rawMatches, rawLeaderboard, rawHighlights, rawSchedule, rawPredictions] = await Promise.all([
+                const [rawAssignments, rawMatches, rawLeaderboard, rawHighlights, rawSchedule, rawPredictions, rawEngine] = await Promise.all([
                     fetchSheetCSV('Assignments'),
                     fetchSheetCSV('Matches'),
                     fetchSheetCSV('Leaderboard'),
                     fetchSheetCSV('Highlights'),
                     fetchSheetCSV('Schedule'),
                     fetchSheetCSV('Predictions').catch(() => []),
+                    fetchSheetCSV('Engine').catch(() => []),
                 ]);
 
                 // ── Assignments: A=#, B=PlayerName, C=Country, D=Flag
@@ -2096,7 +2097,16 @@
                     .map(r => ({ playerName: r[1].trim(), matchId: r[2].trim(), s1: parseInt(r[4]), s2: parseInt(r[5]) }));
 
                 document.getElementById('_diagPanel')?.remove();
-                return { assignments, matches, leaderboard, highlights, schedule, predictions };
+                // Engine: B=Player, J=Prediction Pts, K=Manual Bonus
+                const engineData = {};
+                rawEngine.filter(r => r[1] && r[1].toString().toLowerCase() !== 'player').forEach(r => {
+                    engineData[r[1].trim().toLowerCase()] = {
+                        predictionPts: parseFloat(r[9]) || 0,   // col J
+                        manualBonus:   parseFloat(r[10]) || 0,  // col K
+                    };
+                });
+
+                return { assignments, matches, leaderboard, highlights, schedule, predictions, engineData };
             } catch (err) {
                 const testUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Leaderboard`;
                 showDiag(`<b>${err.message}</b><br><br>
@@ -2119,7 +2129,14 @@
 
         function openPlayerPopup(playerName, allData) {
             if (!allData) return;
-            const { assignments, matches, leaderboard } = allData;
+            const { assignments, matches, leaderboard, engineData } = allData;
+
+            // R32 live check
+            const R32_START = new Date('2026-06-29T00:00:00+05:30');
+            const isR32Live = new Date() >= R32_START;
+
+            // Engine data for this player
+            const eng = (engineData && engineData[playerName.trim().toLowerCase()]) || { predictionPts: 0, manualBonus: 0 };
 
             // Find country/flag from assignments
             const assignment = assignments.find(([name]) => name.trim() === playerName.trim());
@@ -2226,6 +2243,8 @@
                 <div class="pb-row"><span class="pb-label">🤝 Draws (${draws} × 1)</span><span class="pb-val">${drawPts} pts</span></div>
                 <div class="pb-row"><span class="pb-label">🧤 Clean Sheets (${cleanSheets} × 1)</span><span class="pb-val">${csPts} pts</span></div>
                 ${stagePts > 0 ? `<div class="pb-row"><span class="pb-label">🏁 Stage Bonus</span><span class="pb-val">+${stagePts} pts</span></div>` : ''}
+                ${isR32Live && eng.predictionPts > 0 ? `<div class="pb-row"><span class="pb-label">🎯 Prediction</span><span class="pb-val">+${eng.predictionPts} pts</span></div>` : ''}
+                ${eng.manualBonus > 0 ? `<div class="pb-row"><span class="pb-label">⭐ Bonus</span><span class="pb-val">+${eng.manualBonus} pts</span></div>` : ''}
                 <div class="pb-row pb-total"><span class="pb-label">Total Points</span><span class="pb-val">${totalPts} pts</span></div>`;
 
             // Open
@@ -2929,7 +2948,7 @@
             if (!data) return; // silently keep static content if fetch fails
 
             _appData = data; // store globally for popup
-            const { assignments, matches, leaderboard, highlights, schedule, predictions } = data;
+            const { assignments, matches, leaderboard, highlights, schedule, predictions, engineData } = data;
 
             renderPodium(leaderboard, assignments);
             renderLeaderboard(leaderboard);
