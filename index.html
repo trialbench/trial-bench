@@ -2103,6 +2103,7 @@
                     engineData[r[1].trim().toLowerCase()] = {
                         predictionPts: parseFloat(r[9]) || 0,   // col J
                         manualBonus:   parseFloat(r[10]) || 0,  // col K
+                        stagePts:      parseFloat(r[5]) || 0,   // col F
                     };
                 });
 
@@ -2136,7 +2137,7 @@
             const isR32Live = new Date() >= R32_START;
 
             // Engine data for this player
-            const eng = (engineData && engineData[playerName.trim().toLowerCase()]) || { predictionPts: 0, manualBonus: 0 };
+            const eng = (engineData && engineData[playerName.trim().toLowerCase()]) || { predictionPts: 0, manualBonus: 0, stagePts: 0 };
 
             // Find country/flag from assignments
             const assignment = assignments.find(([name]) => name.trim() === playerName.trim());
@@ -2237,7 +2238,7 @@
             const winPts   = wins * 3;
             const drawPts  = draws * 1;
             const csPts    = cleanSheets * 1;
-            const stagePts = totalPts - matchPts;
+            const stagePts = eng.stagePts;
             document.getElementById('popupBreakdown').innerHTML = `
                 <div class="pb-row"><span class="pb-label">🏆 Wins (${wins} × 3)</span><span class="pb-val">${winPts} pts</span></div>
                 <div class="pb-row"><span class="pb-label">🤝 Draws (${draws} × 1)</span><span class="pb-val">${drawPts} pts</span></div>
