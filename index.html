@@ -2128,7 +2128,10 @@
         // Global data store so popup can access after render
         let _appData = null;
 
-        function roundLabel(grp) {
+        const ROUND_CODES = new Set(['R32','R16','QF','SF','F']);
+        function isNewFormat(row) {
+            return row[2] && (row[2].length === 1 || ROUND_CODES.has(row[2]));
+        }
             const map = { 'R32': 'Round of 32', 'R16': 'Round of 16', 'QF': 'Quarter Final', 'SF': 'Semi Final', 'F': 'Final' };
             return map[grp] ? map[grp] : 'Group ' + grp;
         }
@@ -2569,7 +2572,7 @@
 
             // ── Filter to yesterday + today ───────────────────────────────
             const filtered = matches.filter(row => {
-                const isNew = row[2] && row[2].length === 1;
+                const isNew = isNewFormat(row);
                 const dateStr = isNew ? row[1] : null;
                 if (!dateStr) return true; // legacy rows without dates — show all
                 const d = parseSheetDate(dateStr);
@@ -2582,7 +2585,7 @@
             const byDate = {};
             const dateOrder = [];
             filtered.forEach(row => {
-                const isNew = row[2] && row[2].length === 1;
+                const isNew = isNewFormat(row);
                 const key = isNew ? (row[1] || 'Matches') : 'Matches';
                 if (!byDate[key]) { byDate[key] = []; dateOrder.push(key); }
                 byDate[key].push(row);
@@ -2621,7 +2624,7 @@
                 container.appendChild(hdr);
 
                 rows.forEach(row => {
-                    const isNew = row[2] && row[2].length === 1;
+                    const isNew = isNewFormat(row);
                     const [team1, team2, s1Raw, s2Raw] = isNew
                         ? [row[3], row[4], row[5], row[6]]
                         : [row[0], row[1], row[2], row[3]];
