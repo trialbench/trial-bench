@@ -2097,13 +2097,19 @@
                     .map(r => ({ playerName: r[1].trim(), matchId: r[2].trim(), s1: parseInt(r[4]), s2: parseInt(r[5]) }));
 
                 document.getElementById('_diagPanel')?.remove();
-                // Engine: B=Player, J=Prediction Pts, K=Manual Bonus
+                // Engine: A=#, B=Player, C=Country, D=Flag, E=Match Pts, F=Stage Pts, G=Total Pts, H=Rank, I=AdjScore, J=Prediction Pts, K=Manual Bonus
+                // Sheet has 2 header rows — skip rows where col A is not a number
                 const engineData = {};
-                rawEngine.filter(r => r[1] && r[1].toString().toLowerCase() !== 'player').forEach(r => {
-                    engineData[r[1].trim().toLowerCase()] = {
-                        predictionPts: parseFloat(r[9]) || 0,   // col J
+                rawEngine.forEach(r => {
+                    // Skip title row, header row, empty rows
+                    const rowNum = parseFloat(r[0]);
+                    if (isNaN(rowNum)) return;
+                    const playerName = r[1] ? r[1].toString().trim() : '';
+                    if (!playerName) return;
+                    engineData[playerName.toLowerCase()] = {
+                        predictionPts: parseFloat(r[9])  || 0,  // col J
                         manualBonus:   parseFloat(r[10]) || 0,  // col K
-                        stagePts:      parseFloat(r[5]) || 0,   // col F
+                        stagePts:      parseFloat(r[5])  || 0,  // col F
                     };
                 });
 
