@@ -2132,6 +2132,7 @@
         function isNewFormat(row) {
             return row[2] && (row[2].length === 1 || ROUND_CODES.has(row[2]));
         }
+        function roundLabel(grp) {
             const map = { 'R32': 'Round of 32', 'R16': 'Round of 16', 'QF': 'Quarter Final', 'SF': 'Semi Final', 'F': 'Final' };
             return map[grp] ? map[grp] : 'Group ' + grp;
         }
