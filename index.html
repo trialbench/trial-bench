@@ -2128,6 +2128,11 @@
         // Global data store so popup can access after render
         let _appData = null;
 
+        function roundLabel(grp) {
+            const map = { 'R32': 'Round of 32', 'R16': 'Round of 16', 'QF': 'Quarter Final', 'SF': 'Semi Final', 'F': 'Final' };
+            return map[grp] ? map[grp] : 'Group ' + grp;
+        }
+
         function openPlayerPopup(playerName, allData) {
             if (!allData) return;
             const { assignments, matches, leaderboard, engineData } = allData;
@@ -2222,7 +2227,7 @@
                     const ptsLabel = m.result === 'upcoming'
                         ? `<span class="pm-pts" style="color:var(--text-muted)">TBD</span>`
                         : `<div class="pm-pts">+${m.pts} pts${m.isCS ? '<span class="pm-cs">🧤 Clean Sheet</span>' : ''}</div>`;
-                    const meta = [m.date, m.grp ? `Group ${m.grp}` : ''].filter(Boolean).join(' · ');
+                    const meta = [m.date, m.grp ? roundLabel(m.grp) : ''].filter(Boolean).join(' · ');
                     return `<div class="popup-match-row">
                         <div class="pm-badge ${m.result}">${badgeLabel}</div>
                         <div class="pm-teams">
@@ -2620,7 +2625,7 @@
                     const [team1, team2, s1Raw, s2Raw] = isNew
                         ? [row[3], row[4], row[5], row[6]]
                         : [row[0], row[1], row[2], row[3]];
-                    const grpLabel = isNew && row[2] ? `Group ${row[2]}` : 'Group Stage';
+                    const grpLabel = isNew && row[2] ? roundLabel(row[2]) : 'Group Stage';
 
                     const score1 = s1Raw !== '' && s1Raw !== undefined ? parseInt(s1Raw) : null;
                     const score2 = s2Raw !== '' && s2Raw !== undefined ? parseInt(s2Raw) : null;
