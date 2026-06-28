@@ -2672,6 +2672,7 @@
                     const card = document.createElement('div');
                     card.className = 'match-card';
                     // Build prediction strip for live and completed matches
+                    let predBarHTML = '';
                     let predStripHTML = '';
                     if ((matchStatus === 'ft' || matchStatus === 'live') && predictions && predictions.length > 0) {
                         const t1 = team1.replace(/[^a-zA-Z0-9]/g, '_');
@@ -2683,35 +2684,21 @@
                         if (allPreds.length > 0) {
                             const total = allPreds.length;
                             const team1Wins = allPreds.filter(p => p.s1 > p.s2).length;
-                            const team2Wins = allPreds.filter(p => p.s2 > p.s1).length;
                             const draws     = allPreds.filter(p => p.s1 === p.s2).length;
                             const pct1  = Math.round(team1Wins / total * 100);
                             const pctD  = Math.round(draws     / total * 100);
                             const pct2  = 100 - pct1 - pctD;
 
-                            // Highlight the majority pick in green
-                            const col1  = pct1 >= pct2 && pct1 >= pctD ? '#22C55E' : '#6B7280';
-                            const colD  = pctD > pct1 && pctD > pct2   ? '#F59E0B' : '#F59E0B';
-                            const col2  = pct2 > pct1 && pct2 >= pctD  ? '#22C55E' : '#6B7280';
-                            const bar1  = pct1 >= pct2 && pct1 >= pctD ? '#22C55E' : '#374151';
-                            const barD  = '#F59E0B';
-                            const bar2  = pct2 > pct1 && pct2 >= pctD  ? '#22C55E' : '#374151';
+                            const bar1 = pct1 >= pct2 && pct1 >= pctD ? '#22C55E' : '#374151';
+                            const barD = '#F59E0B';
+                            const bar2 = pct2 > pct1 && pct2 >= pctD  ? '#22C55E' : '#374151';
 
-                            const pctBarHTML = `
-                                <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
-                                    <span class="pred-strip-line" style="color:${col1};font-weight:700;">${team1.substring(0,3).toUpperCase()} ${pct1}%</span>
-                                    <span class="pred-strip-line" style="color:${colD};font-weight:700;">Draw ${pctD}%</span>
-                                    <span class="pred-strip-line" style="color:${col2};font-weight:700;">${team2.substring(0,3).toUpperCase()} ${pct2}%</span>
-                                </div>
-                                <div style="height:5px;border-radius:99px;overflow:hidden;display:flex;gap:1px;background:#1a2236;">
-                                    <div style="width:${pct1}%;background:${bar1};border-radius:99px 0 0 99px;"></div>
-                                    <div style="width:${pctD}%;background:${barD};"></div>
-                                    <div style="width:${pct2}%;background:${bar2};border-radius:0 99px 99px 0;"></div>
-                                </div>`;
+                            const lbl1 = `${team1.substring(0,3).toUpperCase()} ${pct1}%`;
+                            const lblD = `Draw ${pctD}%`;
+                            const lbl2 = `${team2.substring(0,3).toUpperCase()} ${pct2}%`;
 
-                            const lines = [pctBarHTML];
+                            predBarHTML = `<div style="margin:6px 0 10px;height:18px;border-radius:8px;overflow:hidden;display:flex;gap:1px;background:#1a2236;">${pct1>0?`<div style="width:${pct1}%;background:${bar1};display:flex;align-items:center;justify-content:center;"><span style="font-size:10px;font-weight:800;color:${bar1==='#22C55E'?'#052e16':'#9CA3AF'};">${lbl1}</span></div>`:''} ${pctD>0?`<div style="width:${pctD}%;background:${barD};display:flex;align-items:center;justify-content:center;"><span style="font-size:10px;font-weight:800;color:#451a03;">${lblD}</span></div>`:''} ${pct2>0?`<div style="width:${pct2}%;background:${bar2};display:flex;align-items:center;justify-content:center;"><span style="font-size:10px;font-weight:800;color:${bar2==='#22C55E'?'#052e16':'#9CA3AF'};">${lbl2}</span></div>`:''}</div>`;
 
-                            // Only show correct/exact results after full time
                             if (matchStatus === 'ft' && hasScore) {
                                 const exactNames = allPreds
                                     .filter(p => p.s1 === score1 && p.s2 === score2)
@@ -2721,21 +2708,24 @@
                                     const actResult  = Math.sign(score1 - score2);
                                     return predResult === actResult && !(p.s1 === score1 && p.s2 === score2);
                                 }).length;
+                                const lines = [];
                                 if (exactNames.length > 0) {
-                                    lines.push(`<div class="pred-strip-line exact" style="margin-top:6px;"><span class="pred-label">🎯 Perfect prediction:</span><span class="pred-names">${exactNames.join(' · ')}</span></div>`);
+                                    lines.push(`<div class="pred-strip-line exact"><span class="pred-label">🎯 Perfect prediction:</span><span class="pred-names">${exactNames.join(' · ')}</span></div>`);
                                 }
                                 if (correctCount > 0) {
-                                    lines.push(`<div class="pred-strip-line correct" style="margin-top:4px;"><span class="pred-label">✅</span>${correctCount} predicted the correct result</div>`);
+                                    lines.push(`<div class="pred-strip-line correct"><span class="pred-label">✅</span>${correctCount} predicted the correct result</div>`);
+                                }
+                                if (lines.length > 0) {
+                                    predStripHTML = `<div class="pred-strip">${lines.join('')}</div>`;
                                 }
                             }
-
-                            predStripHTML = `<div class="pred-strip">${lines.join('')}</div>`;
                         }
                     }
 
                     card.innerHTML = `
                         <div class="match-status-bar">${statusHTML}</div>
                         <div class="match-stage">${grpLabel}</div>
+                        ${predBarHTML}
                         <div class="match-players">
                             <div class="match-player ${p1Class}">
                                 <div class="avatar">${c1.flag}</div>
