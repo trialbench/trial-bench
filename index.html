@@ -2195,9 +2195,9 @@
                         pts = parseFloat(pts2Raw) || 0;
                         isCS = (cs2Raw === '✅' || cs2Raw === 'TRUE' || s1 === 0);
                     }
-                    // Determine result from actual points awarded (respects manual overrides
-                    // for penalty-shootout wins), not from raw score comparison
-                    result = pts >= 3 ? 'win' : pts === 1 ? 'draw' : 'loss';
+                    // Determine result from pts — account for clean sheet bonus (+1)
+                    // Win = 3pts or 4pts (win + CS), Draw = 1pt or 2pts (draw + CS), Loss = 0pts
+                    result = pts >= 3 ? 'win' : pts >= 1 ? 'draw' : 'loss';
                     if (result === 'win')  wins++;
                     if (result === 'draw') draws++;
                     if (result === 'loss') losses++;
