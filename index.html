@@ -2631,7 +2631,7 @@
                     const [team1, team2, s1Raw, s2Raw] = isNew
                         ? [row[3], row[4], row[5], row[6]]
                         : [row[0], row[1], row[2], row[3]];
-                    const grpLabel = isNew && row[2] ? roundLabel(row[2]) : 'Group Stage';
+                    let grpLabel = isNew && row[2] ? roundLabel(row[2]) : 'Group Stage';
 
                     const score1 = s1Raw !== '' && s1Raw !== undefined ? parseInt(s1Raw) : null;
                     const score2 = s2Raw !== '' && s2Raw !== undefined ? parseInt(s2Raw) : null;
