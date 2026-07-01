@@ -2062,8 +2062,8 @@
                 //            H=PtsT1, I=PtsT2, J=Result, K=CST1, L=CST2
                 const matches = rawMatches
                     .filter(r => r[0] && /^\d+$/.test(r[0].trim()))
-                    .map(r => [r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11]]);
-                // → [#, Date, Grp, Team1, Team2, Score1, Score2, PtsT1, PtsT2, Result, CST1, CST2]
+                    .map(r => [r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11], r[12]]);
+                // → [#, Date, Grp, Team1, Team2, Score1, Score2, PtsT1, PtsT2, Result, CST1, CST2, DecidedBy]
 
                 // ── Leaderboard: A=Player, B=Country, C=Flag, D=Points
                 const leaderboard = rawLeaderboard
