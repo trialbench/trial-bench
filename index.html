@@ -2162,18 +2162,18 @@
             // Matches sheet: [MD, Date, Group, Team1, Team2, Score1, Score2, PtsT1, PtsT2, Result, CST1, CST2]
             // or old format: [Team1, Team2, Score1, Score2, PtsT1, PtsT2]
             // Detect format by checking if col index 2 is a single letter (group) or a long name (team)
-            const isNewFormat = matches[0] && matches[0][2] && matches[0][2].length === 1;
+            const isNewFormatMatch = matches[0] && isNewFormat(matches[0]);
 
             let wins = 0, draws = 0, losses = 0, cleanSheets = 0, matchPts = 0;
             const matchRows = [];
 
             matches.forEach(row => {
-                let md, date, grp, team1, team2, s1Raw, s2Raw, pts1Raw, pts2Raw, cs1Raw, cs2Raw;
-                if (isNewFormat) {
-                    [md, date, grp, team1, team2, s1Raw, s2Raw, pts1Raw, pts2Raw, , cs1Raw, cs2Raw] = row;
+                let md, date, grp, team1, team2, s1Raw, s2Raw, pts1Raw, pts2Raw, cs1Raw, cs2Raw, decidedBy;
+                if (isNewFormatMatch) {
+                    [md, date, grp, team1, team2, s1Raw, s2Raw, pts1Raw, pts2Raw, , cs1Raw, cs2Raw, decidedBy] = row;
                 } else {
                     [team1, team2, s1Raw, s2Raw, pts1Raw, pts2Raw] = row;
-                    md = ''; date = ''; grp = '';
+                    md = ''; date = ''; grp = ''; decidedBy = '';
                     cs1Raw = (s2Raw === '0' || s2Raw === 0) ? '✅' : '';
                     cs2Raw = (s1Raw === '0' || s1Raw === 0) ? '✅' : '';
                 }
@@ -2191,12 +2191,13 @@
                     if (isTeam1) {
                         pts = parseFloat(pts1Raw) || 0;
                         isCS = (cs1Raw === '✅' || cs1Raw === 'TRUE' || s2 === 0);
-                        result = s1 > s2 ? 'win' : s1 === s2 ? 'draw' : 'loss';
                     } else {
                         pts = parseFloat(pts2Raw) || 0;
                         isCS = (cs2Raw === '✅' || cs2Raw === 'TRUE' || s1 === 0);
-                        result = s2 > s1 ? 'win' : s2 === s1 ? 'draw' : 'loss';
                     }
+                    // Determine result from actual points awarded (respects manual overrides
+                    // for penalty-shootout wins), not from raw score comparison
+                    result = pts >= 3 ? 'win' : pts === 1 ? 'draw' : 'loss';
                     if (result === 'win')  wins++;
                     if (result === 'draw') draws++;
                     if (result === 'loss') losses++;
@@ -2205,8 +2206,9 @@
                 }
 
                 const opponent = isTeam1 ? team2 : team1;
+                const isPens = decidedBy && decidedBy.trim().toLowerCase() === 'pens';
                 const scoreStr = hasScore
-                    ? (isTeam1 ? `${s1} – ${s2}` : `${s2} – ${s1}`)
+                    ? (isTeam1 ? `${s1} – ${s2}` : `${s2} – ${s1}`) + (isPens ? ' (Pens)' : '')
                     : 'Upcoming';
                 matchRows.push({ result, pts, isCS, opponent, scoreStr, date: date || md, grp });
             });
@@ -2651,13 +2653,24 @@
                     const matchStatus = getMatchStatus(sched ? sched.time : null, hasScore);
 
                     if (matchStatus === 'ft') {
+                        const decidedBy = isNew && row[12] ? String(row[12]).trim().toLowerCase() : '';
+                        const isPens = decidedBy === 'pens';
+                        const pts1 = isNew && row[7] !== '' ? parseFloat(row[7]) : null;
+                        const pts2 = isNew && row[8] !== '' ? parseFloat(row[8]) : null;
+                        const pensTag = isPens ? ' <span style="font-size:10px;color:var(--text-muted);font-weight:500">(Pens)</span>' : '';
                         scoreDisplay = hasScore
-                            ? `<span class="score-anim">${score1} - ${score2}</span>`
+                            ? `<span class="score-anim">${score1} - ${score2}</span>${pensTag}`
                             : `<span style="font-size:13px;color:var(--text-muted);">FT</span>`;
                         statusHTML = `<span class="match-status ft">Full Time</span>`;
                         if (hasScore) {
-                            if (score1 > score2) p1Class = 'winner';
-                            else if (score2 > score1) p2Class = 'winner';
+                            // Use actual pts awarded to determine winner (respects manual override)
+                            if (pts1 !== null && pts2 !== null) {
+                                if (pts1 >= 3) p1Class = 'winner';
+                                else if (pts2 >= 3) p2Class = 'winner';
+                            } else {
+                                if (score1 > score2) p1Class = 'winner';
+                                else if (score2 > score1) p2Class = 'winner';
+                            }
                         }
                     } else if (matchStatus === 'live') {
                         scoreDisplay = `<span style="font-size:13px;color:#ef4444;font-weight:700;letter-spacing:1px;">LIVE</span>`;
