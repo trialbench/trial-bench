@@ -2657,11 +2657,13 @@
                         const isPens = decidedBy === 'pens';
                         const pts1 = isNew && row[7] !== '' ? parseFloat(row[7]) : null;
                         const pts2 = isNew && row[8] !== '' ? parseFloat(row[8]) : null;
-                        const pensTag = isPens ? ' <span style="font-size:10px;color:var(--text-muted);font-weight:500">(Pens)</span>' : '';
                         scoreDisplay = hasScore
-                            ? `<span class="score-anim">${score1} - ${score2}</span>${pensTag}`
+                            ? `<span class="score-anim">${score1} - ${score2}</span>`
                             : `<span style="font-size:13px;color:var(--text-muted);">FT</span>`;
                         statusHTML = `<span class="match-status ft">Full Time</span>`;
+                        if (isPens) {
+                            grpLabel = grpLabel + ' · <span style="font-size:10px;font-weight:600;color:var(--text-muted);letter-spacing:0.5px;text-transform:uppercase">Penalties</span>';
+                        }
                         if (hasScore) {
                             // Use actual pts awarded to determine winner (respects manual override)
                             if (pts1 !== null && pts2 !== null) {
